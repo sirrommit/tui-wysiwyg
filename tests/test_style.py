@@ -59,7 +59,7 @@ class TestStripComments:
 |==============|
 """
         model = Parser().parse(definition)
-        assert any(hasattr(r, 'columns') for r in model.rows)
+        assert any(hasattr(r, 'columns') for r in model.items)
 
 
 # ── parse_styled ────────────────────────────────────────────────────────────

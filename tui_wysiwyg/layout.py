@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -12,86 +11,111 @@ class Region:
 
 
 @dataclass
-class ColumnSpec:
-    width: int | None       # None = fill remainder; int = chars
-    is_percentage: bool
-    pct: float | None       # if is_percentage, 0..100
-    row_count: int | None   # None = infer
+class Panel:
+    """A single content leaf within a column."""
+    name: str | None
+    row_count: int | None       # None = infer from num_rows_def
     row_count_is_pct: bool
     row_pct: float | None
-    region_name: str | None
-    heading_text: str | None    # underlined text in this column (may be None)
-    double_divider_right: bool  # True if column is followed by # instead of |
+    heading: str | None
+    num_rows_def: int = 0       # definition lines in this panel's slot
 
 
 @dataclass
-class RowGroup:
-    """A group of column rows between border rows."""
-    columns: list  # list[ColumnSpec], one entry per column
-    num_text_rows: int          # filler rows visible in definition
-    border_top: str | None      # "double" or "single" or None
-    border_bottom: str | None
+class PartialBorder:
+    """A horizontal divider between panels within a single column."""
+    style: str   # 'single' or 'double'
+
+
+@dataclass
+class ColumnDef:
+    """One column within a VSplit."""
+    width: int | None       # fixed chars; None = fill remainder
+    is_percentage: bool
+    pct: float | None       # percentage 0..100
+    double_divider_right: bool
+    panels: list            # list[Panel], at least one
+    partial_borders: list   # list[PartialBorder], len == len(panels) - 1
+
+
+@dataclass
+class VSplit:
+    """Columns arranged side by side."""
+    columns: list   # list[ColumnDef]
 
 
 @dataclass
 class BorderRow:
-    style: str         # "double" or "single"
+    style: str          # 'single' or 'double'
     title: str | None
 
 
 @dataclass
 class LayoutModel:
-    rows: list  # list[RowGroup | BorderRow], ordered top-to-bottom
-    has_percentage: bool  # any % widths/heights?
+    items: list         # list[BorderRow | VSplit], ordered top-to-bottom
+    has_percentage: bool
 
     def resolve(self, term_width: int, term_height: int) -> list:
-        """Convert the layout model to a flat list of Regions with absolute coordinates."""
+        """Return a flat list of Region objects with absolute coordinates."""
         regions = []
         current_row = 0
 
-        for item in self.rows:
+        for item in self.items:
             if isinstance(item, BorderRow):
                 current_row += 1
                 continue
 
-            # RowGroup
-            row_group = item
+            vsplit = item
+            col_widths = _resolve_col_widths(vsplit.columns, term_width)
 
-            # Resolve column widths
-            col_widths = _resolve_widths(row_group.columns, term_width)
+            # Resolve all panel heights
+            all_ph = [_resolve_panel_heights(col, term_height) for col in vsplit.columns]
 
-            # Resolve row height
-            height = _resolve_height(row_group, term_height)
+            # VSplit physical height = max total rows across all columns
+            # Each column's physical rows = sum(panel heights) + number of partial borders
+            vsplit_height = 0
+            for col, ph in zip(vsplit.columns, all_ph):
+                col_phys = sum(ph) + len(col.partial_borders)
+                vsplit_height = max(vsplit_height, col_phys)
+            vsplit_height = max(vsplit_height, 1)
 
-            # Compute column positions
+            # Stretch the last panel of any column that's shorter than vsplit_height
+            for i, (col, ph) in enumerate(zip(vsplit.columns, all_ph)):
+                col_phys = sum(ph) + len(col.partial_borders)
+                if col_phys < vsplit_height:
+                    all_ph[i][-1] += vsplit_height - col_phys
+
+            # Compute column start positions
             col_positions = []
-            col_pos = 1  # start after outer left border '|'
-            for i, col_spec in enumerate(row_group.columns):
-                col_positions.append(col_pos)
-                # Add 1 for divider between columns
-                col_pos += col_widths[i] + 1
+            pos = 1  # after outer left border
+            for i, col in enumerate(vsplit.columns):
+                col_positions.append(pos)
+                pos += col_widths[i] + 1  # +1 for divider
 
-            # Create regions for named columns
-            for i, col_spec in enumerate(row_group.columns):
-                if col_spec.region_name:
-                    region = Region(
-                        name=col_spec.region_name,
-                        row=current_row,
-                        col=col_positions[i],
-                        width=col_widths[i],
-                        height=height,
-                    )
-                    regions.append(region)
+            # Emit regions
+            for i, (col, ph) in enumerate(zip(vsplit.columns, all_ph)):
+                panel_row = current_row
+                for j, panel in enumerate(col.panels):
+                    h = ph[j]
+                    if panel.name:
+                        regions.append(Region(
+                            name=panel.name,
+                            row=panel_row,
+                            col=col_positions[i],
+                            width=col_widths[i],
+                            height=h,
+                        ))
+                    panel_row += h
+                    if j < len(col.partial_borders):
+                        panel_row += 1  # skip the partial border row
 
-            current_row += height
+            current_row += vsplit_height
 
         return regions
 
 
-def _resolve_widths(columns: list, term_width: int) -> list:
+def _resolve_col_widths(columns: list, term_width: int) -> list:
     """Resolve column widths to absolute character counts."""
-    # Account for outer borders (2 chars) and dividers between columns
-    # Total available = term_width - 2 (outer borders) - (num_cols - 1) dividers
     num_cols = len(columns)
     available = term_width - 2 - (num_cols - 1)
 
@@ -116,12 +140,16 @@ def _resolve_widths(columns: list, term_width: int) -> list:
     return [w if w is not None else 0 for w in widths]
 
 
-def _resolve_height(row_group, term_height: int) -> int:
-    """Resolve row group height."""
-    for col in row_group.columns:
-        if col.row_count is not None:
-            if col.row_count_is_pct:
-                return int(term_height * col.row_pct / 100)
-            return col.row_count
-    # Default to num_text_rows if no explicit row count
-    return max(1, row_group.num_text_rows)
+def _resolve_panel_heights(col: ColumnDef, term_height: int) -> list:
+    """Return a list of resolved heights (ints) for each panel in the column."""
+    heights = []
+    for panel in col.panels:
+        if panel.row_count is not None:
+            if panel.row_count_is_pct:
+                h = int(term_height * panel.row_pct / 100)
+            else:
+                h = panel.row_count
+        else:
+            h = max(1, panel.num_rows_def)
+        heights.append(h)
+    return heights

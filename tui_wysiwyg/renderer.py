@@ -1,52 +1,32 @@
 import sys
-from .layout import LayoutModel, Region, BorderRow, RowGroup
+from .layout import LayoutModel, Region, BorderRow, VSplit, _resolve_col_widths, _resolve_panel_heights
 from .style import render_styled, styled_plain_text
 
 # ---------------------------------------------------------------------------
 # Box-drawing character tables
-# Each table is keyed by position role:
-#   tl=top-left corner,  tr=top-right corner
-#   bl=bottom-left,      br=bottom-right
-#   lt=left T-junction,  rt=right T-junction
-#   tt=top T-junction,   bt=bottom T-junction
-#   cr=cross
+# Keys: tl tr bl br lt rt tt bt cr h v
 # ---------------------------------------------------------------------------
-
-# Single horizontal + single vertical
 _SS = dict(h='─', v='│', tl='┌', tr='┐', bl='└', br='┘',
            lt='├', rt='┤', tt='┬', bt='┴', cr='┼')
-
-# Double horizontal + double vertical
 _DD = dict(h='═', v='║', tl='╔', tr='╗', bl='╚', br='╝',
            lt='╠', rt='╣', tt='╦', bt='╩', cr='╬')
-
-# Double horizontal + single vertical
 _DS = dict(h='═', v='│', tl='╒', tr='╕', bl='╘', br='╛',
            lt='╞', rt='╡', tt='╤', bt='╧', cr='╪')
-
-# Single horizontal + double vertical
 _SD = dict(h='─', v='║', tl='╓', tr='╖', bl='╙', br='╜',
            lt='╟', rt='╢', tt='╥', bt='╨', cr='╫')
 
 
 def _box(h_style: str, v_style: str) -> dict:
-    """Return the right box-drawing table for this h/v style combination."""
     if h_style == 'double' and v_style == 'double':
         return _DD
     if h_style == 'single' and v_style == 'single':
         return _SS
     if h_style == 'double' and v_style == 'single':
         return _DS
-    return _SD  # single h, double v
+    return _SD
 
 
-def _border_end_char(h_style: str, v_above: str | None, v_below: str | None,
-                     side: str) -> str:
-    """
-    Return the character for the left ('l') or right ('r') end of a border row.
-    v_above / v_below: 'single', 'double', or None if no row group there.
-    """
-    # Prefer the vertical style present; if both, use v_above (arbitrary)
+def _border_end_char(h_style, v_above, v_below, side):
     v = v_above or v_below or 'single'
     tbl = _box(h_style, v)
     if v_above is None:
@@ -56,8 +36,7 @@ def _border_end_char(h_style: str, v_above: str | None, v_below: str | None,
     return tbl['lt'] if side == 'l' else tbl['rt']
 
 
-def _border_cross_char(h_style: str, v_above: str | None, v_below: str | None) -> str:
-    """Return the character for an internal column-divider intersection."""
+def _border_cross_char(h_style, v_above, v_below):
     v = v_above or v_below or 'single'
     tbl = _box(h_style, v)
     if v_above is None:
@@ -67,54 +46,63 @@ def _border_cross_char(h_style: str, v_above: str | None, v_below: str | None) -
     return tbl['cr']
 
 
+# ---------------------------------------------------------------------------
+# Divider map helpers
+# ---------------------------------------------------------------------------
+
+def _vsplit_dividers(vsplit: VSplit, term_width: int) -> dict:
+    """Return {col_pos: div_style} for all vertical lines of a VSplit."""
+    col_widths = _resolve_col_widths(vsplit.columns, term_width)
+    dividers = {0: 'single', term_width - 1: 'single'}
+    col_pos = 1
+    for i, col in enumerate(vsplit.columns):
+        col_pos += col_widths[i]
+        if i < len(vsplit.columns) - 1:
+            style = 'double' if col.double_divider_right else 'single'
+            dividers[col_pos] = style
+            col_pos += 1
+    return dividers
+
+
+# ---------------------------------------------------------------------------
+# Renderer
+# ---------------------------------------------------------------------------
+
 class Renderer:
     def __init__(self, term):
         self._term = term
 
-    def _get_dividers(self, row_group: RowGroup, term_width: int) -> dict:
-        """
-        Return {col_position: div_style} for all vertical lines in a row group,
-        including the outer left (col 0) and outer right (col term_width-1).
-        """
-        from .layout import _resolve_widths
-        dividers = {0: 'single', term_width - 1: 'single'}
-        col_widths = _resolve_widths(row_group.columns, term_width)
-        col_pos = 1
-        for i, col_spec in enumerate(row_group.columns):
-            col_pos += col_widths[i]
-            if i < len(row_group.columns) - 1:
-                style = 'double' if col_spec.double_divider_right else 'single'
-                dividers[col_pos] = style
-                col_pos += 1
-        return dividers
-
     def full_render(self, layout_model, regions, interactions,
                     focused_name, term_width, term_height):
-        """Render the full layout."""
         term = self._term
         print(term.clear, end='', flush=False)
 
-        rows = layout_model.rows
-        current_row = 0
-        for i, item in enumerate(rows):
-            prev_item = rows[i - 1] if i > 0 else None
-            next_item = rows[i + 1] if i < len(rows) - 1 else None
+        items = layout_model.items
 
+        # Pass 1: structural drawing (full borders + column dividers)
+        current_row = 0
+        for idx, item in enumerate(items):
             if isinstance(item, BorderRow):
-                prev_div = (self._get_dividers(prev_item, term_width)
-                            if isinstance(prev_item, RowGroup) else None)
-                next_div = (self._get_dividers(next_item, term_width)
-                            if isinstance(next_item, RowGroup) else None)
+                prev_item = items[idx - 1] if idx > 0 else None
+                next_item = items[idx + 1] if idx < len(items) - 1 else None
+                prev_div = (_vsplit_dividers(prev_item, term_width)
+                            if isinstance(prev_item, VSplit) else None)
+                next_div = (_vsplit_dividers(next_item, term_width)
+                            if isinstance(next_item, VSplit) else None)
                 self.draw_border(current_row, term_width, item.style, item.title,
                                  prev_dividers=prev_div, next_dividers=next_div)
                 current_row += 1
             else:
-                row_group = item
-                height = self._group_height(row_group, term_height)
-                self._draw_row_group(row_group, current_row, height, term_width)
-                current_row += height
+                vsplit = item
+                col_widths = _resolve_col_widths(vsplit.columns, term_width)
+                all_ph = [_resolve_panel_heights(col, term_height)
+                          for col in vsplit.columns]
+                vsplit_height = _calc_vsplit_height(vsplit, all_ph)
+                self._draw_vsplit_dividers(vsplit, current_row, vsplit_height,
+                                           col_widths, term_width)
+                current_row += vsplit_height
 
-        # Render each named region
+        # Pass 2: content regions
         for name, region in regions.items():
             interaction = interactions.get(name)
             focused = (name == focused_name)
@@ -123,73 +111,152 @@ class Renderer:
             else:
                 self._render_empty_region(region, focused)
 
+        # Pass 3: partial borders (overlay on top of content)
+        current_row = 0
+        for item in items:
+            if isinstance(item, BorderRow):
+                current_row += 1
+            else:
+                vsplit = item
+                col_widths = _resolve_col_widths(vsplit.columns, term_width)
+                all_ph = [_resolve_panel_heights(col, term_height)
+                          for col in vsplit.columns]
+                vsplit_height = _calc_vsplit_height(vsplit, all_ph)
+                self._draw_partial_borders(vsplit, current_row, col_widths,
+                                           all_ph, term_width)
+                current_row += vsplit_height
+
         sys.stdout.flush()
 
-    def _group_height(self, row_group: RowGroup, term_height: int) -> int:
-        from .layout import _resolve_height
-        return _resolve_height(row_group, term_height)
-
-    def _draw_row_group(self, row_group: RowGroup, start_row: int,
-                        height: int, term_width: int) -> None:
-        """Draw the outer borders and column dividers for a row group."""
-        from .layout import _resolve_widths
+    def _draw_vsplit_dividers(self, vsplit: VSplit, start_row: int,
+                               height: int, col_widths: list,
+                               term_width: int) -> None:
+        """Draw outer border bars and internal column dividers for all rows."""
         term = self._term
-        col_widths = _resolve_widths(row_group.columns, term_width)
-
         for row_offset in range(height):
             row = start_row + row_offset
             print(term.move(row, 0) + '│', end='', flush=False)
             print(term.move(row, term_width - 1) + '│', end='', flush=False)
-
             col_pos = 1
-            for i, col_spec in enumerate(row_group.columns):
+            for i, col in enumerate(vsplit.columns):
                 col_pos += col_widths[i]
-                if i < len(row_group.columns) - 1:
-                    divider = '║' if col_spec.double_divider_right else '│'
+                if i < len(vsplit.columns) - 1:
+                    divider = '║' if col.double_divider_right else '│'
                     print(term.move(row, col_pos) + divider, end='', flush=False)
                     col_pos += 1
 
+    def _draw_partial_borders(self, vsplit: VSplit, vsplit_start_row: int,
+                               col_widths: list, all_ph: list,
+                               term_width: int) -> None:
+        """Draw partial border rows within a VSplit."""
+        term = self._term
+        n_cols = len(vsplit.columns)
+
+        # For each column, compute the set of row offsets (within the VSplit)
+        # where a partial border appears, and the border style at that offset.
+        pb_at_offset = {}  # row_offset -> {col_idx -> pb_style}
+        for i, col in enumerate(vsplit.columns):
+            ph = all_ph[i]
+            offset = 0
+            for j, panel in enumerate(col.panels):
+                offset += ph[j]
+                if j < len(col.partial_borders):
+                    pb = col.partial_borders[j]
+                    if offset not in pb_at_offset:
+                        pb_at_offset[offset] = {}
+                    pb_at_offset[offset][i] = pb.style
+                    offset += 1  # the partial border row itself
+
+        if not pb_at_offset:
+            return
+
+        # Compute column start positions within the terminal row
+        col_start = []
+        pos = 1
+        for i, col in enumerate(vsplit.columns):
+            col_start.append(pos)
+            pos += col_widths[i] + 1
+
+        for row_offset, col_borders in pb_at_offset.items():
+            row = vsplit_start_row + row_offset
+            # Determine the border style for this row (use first col's style)
+            pb_style = next(iter(col_borders.values()))
+
+            fill_char = '═' if pb_style == 'double' else '─'
+
+            # Build the line character by character
+            # First set all positions to either fill or vertical divider
+            line = [' '] * term_width
+
+            # Left outer edge
+            left_has_border = 0 in col_borders
+            v_style = 'single'  # outer border is always single vertical
+            tbl = _box(pb_style, v_style)
+            line[0] = tbl['lt'] if left_has_border else '│'
+
+            # Right outer edge
+            right_has_border = (n_cols - 1) in col_borders
+            line[term_width - 1] = tbl['rt'] if right_has_border else '│'
+
+            # Fill each column's area
+            for i in range(n_cols):
+                start = col_start[i]
+                w = col_widths[i]
+                if i in col_borders:
+                    for x in range(start, start + w):
+                        line[x] = fill_char
+                # else: leave as spaces (content region)
+
+            # Internal divider positions
+            divider_pos = 1
+            for i, col in enumerate(vsplit.columns):
+                divider_pos += col_widths[i]
+                if i < n_cols - 1:
+                    left_col_has_border = i in col_borders
+                    right_col_has_border = (i + 1) in col_borders
+                    v_style = 'double' if col.double_divider_right else 'single'
+                    tbl = _box(pb_style, v_style)
+                    if left_col_has_border and right_col_has_border:
+                        line[divider_pos] = tbl['cr']
+                    elif left_col_has_border:
+                        line[divider_pos] = tbl['rt']
+                    elif right_col_has_border:
+                        line[divider_pos] = tbl['lt']
+                    else:
+                        line[divider_pos] = '║' if col.double_divider_right else '│'
+                    divider_pos += 1
+
+            print(term.move(row, 0) + ''.join(line), end='', flush=False)
+
     def render_region(self, region: Region, interaction, term, focused: bool):
-        """Render a single region using its interaction."""
         interaction.render(region, term, focused)
 
     def _render_empty_region(self, region: Region, focused: bool):
-        """Render an empty (unassigned) region."""
         term = self._term
         for row_offset in range(region.height):
             row = region.row + row_offset
-            print(term.move(row, region.col) + ' ' * region.width, end='', flush=False)
+            print(term.move(row, region.col) + ' ' * region.width,
+                  end='', flush=False)
 
     def draw_border(self, row: int, term_width: int, style: str, title=None,
                     prev_dividers: dict | None = None,
                     next_dividers: dict | None = None) -> None:
-        """
-        Draw a full-width horizontal border row using box-drawing characters.
-
-        prev_dividers: {col_pos: div_style} for row group above (None if none)
-        next_dividers: {col_pos: div_style} for row group below (None if none)
-        The outer edges (0 and term_width-1) are always present in each dict.
-        """
+        """Draw a full-width horizontal border row."""
         term = self._term
         fill = '═' if style == 'double' else '─'
-
         prev = prev_dividers or {}
         nxt = next_dividers or {}
 
-        # Build the line as a list of characters (default: fill)
         chars = [fill] * term_width
 
-        # Left outer edge
-        v_up = prev.get(0)   # 'single'/'double'/None
+        v_up = prev.get(0)
         v_dn = nxt.get(0)
         chars[0] = _border_end_char(style, v_up, v_dn, 'l')
 
-        # Right outer edge
         v_up = prev.get(term_width - 1)
         v_dn = nxt.get(term_width - 1)
         chars[term_width - 1] = _border_end_char(style, v_up, v_dn, 'r')
 
-        # Internal column-divider positions
         all_positions = set(prev.keys()) | set(nxt.keys())
         for pos in all_positions:
             if 0 < pos < term_width - 1:
@@ -200,12 +267,10 @@ class Renderer:
         line = ''.join(chars)
         print(term.move(row, 0) + line, end='', flush=False)
 
-        # Overlay title (centered), supporting style tags.
         if title:
-            # Use visual (plain) length for centering calculations.
             plain_title = f' {styled_plain_text(title)} '
             title_len = len(plain_title)
-            inner_width = term_width - 2   # exclude corner characters
+            inner_width = term_width - 2
             if title_len <= inner_width:
                 left_fill = (inner_width - title_len) // 2
                 title_start = 1 + left_fill
@@ -216,3 +281,16 @@ class Renderer:
                     reset = ''
                 print(term.move(row, title_start) + rendered + reset,
                       end='', flush=False)
+
+
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
+
+def _calc_vsplit_height(vsplit: VSplit, all_ph: list) -> int:
+    """Compute physical height of a VSplit from already-resolved panel heights."""
+    h = 0
+    for col, ph in zip(vsplit.columns, all_ph):
+        col_phys = sum(ph) + len(col.partial_borders)
+        h = max(h, col_phys)
+    return max(h, 1)

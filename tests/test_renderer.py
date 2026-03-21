@@ -1,9 +1,8 @@
 import pytest
-import io
 import sys
 from tui_wysiwyg.testing import MockTerminal
 from tui_wysiwyg.renderer import Renderer
-from tui_wysiwyg.layout import Region, RowGroup, BorderRow, ColumnSpec
+from tui_wysiwyg.layout import Region, VSplit, BorderRow, ColumnDef, Panel
 from tui_wysiwyg.parser import Parser
 from tui_wysiwyg.interactions import MenuReturn, TextBox
 
@@ -39,20 +38,11 @@ class TestRendererDrawBorder:
         out = capsys.readouterr().out
         assert '═' in out
 
-    def test_draw_double_border_corners_no_context(self, renderer, capsys):
-        # With no adjacent row groups, the left/right chars are still fill chars
-        renderer.draw_border(0, 40, 'double')
-        out = capsys.readouterr().out
-        assert '═' in out
-
     def test_draw_double_border_with_below_context(self, renderer, capsys):
-        # A border at the top of the layout: next row group produces T-junction chars
         next_div = {0: 'single', 39: 'single', 20: 'single'}
         renderer.draw_border(0, 40, 'double', next_dividers=next_div)
         out = capsys.readouterr().out
-        # Top-left corner for double-h, single-v below
         assert '╒' in out or '╔' in out
-        # Column T-junction
         assert '╤' in out
 
     def test_draw_single_border_corners(self, renderer, capsys):
@@ -60,8 +50,8 @@ class TestRendererDrawBorder:
         renderer.draw_border(5, 80, 'single',
                               prev_dividers=prev_div, next_dividers=None)
         out = capsys.readouterr().out
-        assert '└' in out   # bottom-left, single
-        assert '┘' in out   # bottom-right, single
+        assert '└' in out
+        assert '┘' in out
 
 
 class TestRendererRenderRegion:
@@ -104,7 +94,6 @@ class TestRendererFullRender:
 
         renderer.full_render(model, regions, interactions, 'menu', 80, 24)
         out = capsys.readouterr().out
-        # Should have output something
         assert len(out) > 0
 
     def test_full_render_writes_border(self, renderer, term, capsys):
@@ -121,6 +110,23 @@ class TestRendererFullRender:
         renderer.full_render(model, regions, interactions, None, 80, 24)
         out = capsys.readouterr().out
         assert 'Title' in out
+
+    def test_full_render_partial_border_produces_output(self, renderer, term, capsys):
+        """A shell with partial borders renders without error."""
+        shell_def = """\
+|=====|
+|{25% 6R $top$ }|{6R $right$ }|
+|-----          |{            }|
+|{25% 6R $bot$ }|{            }|
+|=====|
+"""
+        model = Parser().parse(shell_def)
+        regions_list = model.resolve(80, 24)
+        regions = {r.name: r for r in regions_list}
+        renderer.full_render(model, regions, {}, None, 80, 24)
+        out = capsys.readouterr().out
+        # Partial border character should appear
+        assert '─' in out or '├' in out or '┤' in out
 
 
 class TestMockTerminal:
@@ -153,7 +159,7 @@ class TestMockTerminal:
     def test_fullscreen_context_manager(self):
         term = MockTerminal()
         with term.fullscreen():
-            pass  # Should not raise
+            pass
 
     def test_cbreak_context_manager(self):
         term = MockTerminal()
