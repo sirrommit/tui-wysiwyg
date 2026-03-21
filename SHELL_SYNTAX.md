@@ -7,9 +7,9 @@ A "shell" is a multi-line string that defines the visual structure of a TUI scre
 ## Minimal Example
 
 ```
-|=100%==== My App ====|
+|=100%==== <bold>My App</> ====|
 |{50%  $left$  }|{  $right$  }|
-|=====================|
+|=============================|
 ```
 
 ---
@@ -17,6 +17,35 @@ A "shell" is a multi-line string that defines the visual structure of a TUI scre
 ## Full Example
 
 See `example.shell` for a complete multi-region layout.
+
+---
+
+## C-Style Comments
+
+Shell definition strings support `/* ... */` block comments. Comments are stripped before any parsing occurs and never appear in the rendered TUI. Newlines inside a comment are preserved so that the line numbering of the remaining content is not disrupted.
+
+```
+/* Three-column layout — nav | content | detail.                  */
+/* Left column is fixed 25 chars; others split remaining space.   */
+|=100%========================= My App ===========================|
+|{25  12R  $nav$     }|{50%  12R  $content$ }|{  12R  $detail$ }|
+|{                   }|{                    }|{                 }| /* filler */
+|================================================================|
+|{100%  2R  $status$                                             }|
+|================================================================|
+```
+
+Multi-line comments are allowed:
+
+```
+/*
+ * Status bar appears at the bottom.
+ * Height is fixed at 2 rows.
+ */
+|{100%  2R  $status$ }|
+```
+
+Comments may appear between rows, at the end of a row, or on their own line. They may **not** appear inside a `{ }` column block or inside a border row's fill characters in a way that disrupts the `=`/`-` pattern — place them before or after the `|...|` line instead.
 
 ---
 
@@ -58,7 +87,14 @@ Rules may contain title text between the `=` or `-` characters:
 |---- Section Title ------|
 ```
 
-Text in a rule is centered in the available width.
+Titles may include **style tags** (see [Style Tags](#style-tags) below):
+
+```
+|==== <bold;color=cyan>My Application</> ====|
+|---- <italic>Section Title</> --------------|
+```
+
+Text in a rule is centered based on its **visible** length (style tags are excluded from the width calculation).
 
 ---
 
@@ -156,6 +192,91 @@ Text formatting may appear anywhere in a column block's content, including heade
 
 ---
 
+## Style Tags
+
+Style tags apply colors and text attributes to border row titles. They follow a simple XML-like format and degrade gracefully — if a terminal does not support an attribute, that attribute is silently skipped and the plain text is still displayed.
+
+### Tag Format
+
+```
+<attr[=value][;attr[=value]...]>text</>
+```
+
+- Opening tag: one or more `attr` or `attr=value` pairs separated by `;`
+- Closing tag: `</>` or `</anything>` — the tag name is ignored; all styles reset
+
+Examples:
+
+```
+<bold>text</>
+<color=red>text</>
+<bold;color=red>text</>
+<color=white;bg=blue>text</>
+<bold;underline;color=bright_yellow>text</>
+```
+
+### Text Style Attributes
+
+| Attribute | Aliases | Effect |
+|-----------|---------|--------|
+| `bold` | — | Bold / bright |
+| `dim` | `faint` | Dim / faint |
+| `italic` | — | Italic |
+| `underline` | `ul`, `underlined`, `underline-text` | Underline |
+| `blink` | `flash` | Blinking |
+| `reverse` | `invert`, `reverse-video` | Swap foreground and background |
+| `standout` | — | Standout (often same as reverse) |
+| `strike` | `strikethrough`, `strikeout`, `line-through` | Strikethrough |
+| `normal` | `reset` | Explicit reset to default |
+
+### Color Attributes
+
+**Foreground color** — any of these keys:
+`color`, `fg`, `foreground`, `fg-color`, `text-color`
+
+**Background color** — any of these keys:
+`bg`, `background`, `bg-color`, `bgcolor`, `background-color`
+
+### Named Colors
+
+| Value | Notes |
+|-------|-------|
+| `black`, `red`, `green`, `yellow` | Standard 16-colour palette |
+| `blue`, `magenta`, `cyan`, `white` | Standard 16-colour palette |
+| `bright_black`, `bright_red`, … | Bright variants (prefix `bright_`) |
+| `gray` / `grey` | Alias → `bright_black` |
+| `purple` / `violet` | Alias → `magenta` |
+| `pink` | Alias → `bright_magenta` |
+| `orange` | Alias → `yellow` (closest 16-colour match) |
+| `lime` | Alias → `bright_green` |
+| `teal` / `aqua` | Alias → `cyan` |
+| `navy` / `indigo` | Alias → `blue` |
+| `maroon` | Alias → `red` |
+| `silver` / `lightgray` | Alias → `white` |
+| `0`–`255` | 256-colour index (`color=196`) |
+
+### Rendering Styled Text Inside Regions
+
+Style tags in the shell definition language only apply to border titles. To render styled text inside a region — for example, in a `Function` handler — use `render_styled()` from `tui_wysiwyg.style`:
+
+```python
+from tui_wysiwyg.style import render_styled, styled_plain_text, styled_visual_len
+
+def my_handler(shell, region, key):
+    term = shell.terminal
+    tagged = "<bold;color=red>Error:</> file not found"
+    line = render_styled(tagged, term, max_len=region.width)
+    print(term.move(region.row, region.col) + line)
+```
+
+| Function | Description |
+|----------|-------------|
+| `render_styled(text, term, max_len=None)` | Render tagged text with terminal escapes; truncate visible text to `max_len` if given |
+| `styled_plain_text(text)` | Strip all style tags and return plain text |
+| `styled_visual_len(text)` | Return visible character count (tags excluded) |
+
+---
+
 ## Filler Rows
 
 Filler rows are column rows that contain neither a `$name$` nor a row count marker. They are valid shell syntax and are ignored by the parser — their only purpose is to make the shell definition visually readable as a diagram.
@@ -185,17 +306,22 @@ To render a literal `{`, `}`, `$`, `#`, `__`, `----`, or `====` as text content,
 ## Complete Grammar (Informal)
 
 ```
-shell        ::= row+
+shell        ::= comment* row+
 row          ::= border_row | column_row
-border_row   ::= "|" ("=" | "-")+ [text ("=" | "-")+] "|" NEWLINE
+border_row   ::= "|" ("=" | "-")+ [title ("=" | "-")+] "|" NEWLINE
+title        ::= styled_text                  (plain text or style-tagged text)
 column_row   ::= "|" col_block (divider col_block)* "|" NEWLINE
 col_block    ::= "{" [width] content "}"
-width        ::= INTEGER "%" | INTEGER   (no space before content)
+width        ::= INTEGER "%" | INTEGER        (no space before content)
 content      ::= (row_count | name | formatted_text | filler_text)*
 row_count    ::= INTEGER "R" | INTEGER "%" "R"
 name         ::= "$" [a-z0-9_]+ "$"
 formatted    ::= "__" text "__"
 divider      ::= "|" | "#"
+comment      ::= "/*" .* "*/"                 (DOTALL; newlines preserved)
+style_tag    ::= "<" attr_list ">" | "</>" | "</" name ">"
+attr_list    ::= attr (";" attr)*
+attr         ::= NAME ["=" VALUE]
 ```
 
 ---
@@ -204,14 +330,17 @@ divider      ::= "|" | "#"
 
 The parser processes the shell definition string as follows:
 
-1. Split on newlines.
-2. Strip each line. Empty lines are ignored.
-3. Validate that each line begins and ends with `|`.
-4. Classify each line as a border row or column row.
-5. Group consecutive column rows between border rows into **row groups**.
-6. Within each row group, parse column blocks and extract widths, row counts, and region names.
-7. Validate: no duplicate names, no width overflow (fixed widths only), at least one row count per group (warning if missing).
-8. Return a `LayoutModel`.
+1. Strip `/* ... */` comments, preserving the newlines they contained.
+2. Split on newlines.
+3. Strip each line. Empty lines are ignored.
+4. Validate that each line begins and ends with `|`.
+5. Classify each line as a border row or column row.
+6. Group consecutive column rows between border rows into **row groups**.
+7. Within each row group, parse column blocks and extract widths, row counts, and region names.
+8. Validate: no duplicate names, no width overflow (fixed widths only), at least one row count per group (warning if missing).
+9. Return a `LayoutModel`.
+
+Style tags in border row titles are stored as-is in the `LayoutModel` and are parsed at render time by `render_styled()`. This means style tags do not affect parsing or validation.
 
 ---
 
