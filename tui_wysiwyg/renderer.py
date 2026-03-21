@@ -1,5 +1,6 @@
 import sys
 from .layout import LayoutModel, Region, BorderRow, RowGroup
+from .style import render_styled, styled_plain_text
 
 # ---------------------------------------------------------------------------
 # Box-drawing character tables
@@ -196,16 +197,22 @@ class Renderer:
                 v_dn = nxt.get(pos)
                 chars[pos] = _border_cross_char(style, v_up, v_dn)
 
-        # Overlay title (centered)
+        line = ''.join(chars)
+        print(term.move(row, 0) + line, end='', flush=False)
+
+        # Overlay title (centered), supporting style tags.
         if title:
-            title_str = f' {title} '
-            title_len = len(title_str)
+            # Use visual (plain) length for centering calculations.
+            plain_title = f' {styled_plain_text(title)} '
+            title_len = len(plain_title)
             inner_width = term_width - 2   # exclude corner characters
             if title_len <= inner_width:
                 left_fill = (inner_width - title_len) // 2
                 title_start = 1 + left_fill
-                for j, ch in enumerate(title_str):
-                    chars[title_start + j] = ch
-
-        line = ''.join(chars)
-        print(term.move(row, 0) + line, end='', flush=False)
+                rendered = render_styled(f' {title} ', term)
+                try:
+                    reset = str(term.normal) if term.normal else ''
+                except Exception:
+                    reset = ''
+                print(term.move(row, title_start) + rendered + reset,
+                      end='', flush=False)

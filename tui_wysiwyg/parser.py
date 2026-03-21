@@ -1,9 +1,11 @@
 import re
 from .layout import LayoutModel, RowGroup, BorderRow, ColumnSpec
+from .style import strip_comments
 
 
 class Parser:
     def parse(self, definition: str) -> LayoutModel:
+        definition = strip_comments(definition)
         lines = definition.split('\n')
         # Strip and filter empty lines, but keep track of original line numbers
         processed = []

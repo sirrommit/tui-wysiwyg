@@ -120,8 +120,148 @@ class MockTerminal:
         return '\x1b[1m'
 
     @property
+    def dim(self) -> str:
+        return '\x1b[2m'
+
+    @property
+    def italic(self) -> str:
+        return '\x1b[3m'
+
+    @property
     def underline(self) -> str:
         return '\x1b[4m'
+
+    @property
+    def blink(self) -> str:
+        return '\x1b[5m'
+
+    @property
+    def standout(self) -> str:
+        return '\x1b[7m'
+
+    @property
+    def strikethru(self) -> str:
+        return '\x1b[9m'
+
+    @property
+    def strike(self) -> str:
+        return '\x1b[9m'
+
+    @property
+    def strikethrough(self) -> str:
+        return '\x1b[9m'
+
+    # ── 16 foreground colours ──────────────────────────────────────────────
+    @property
+    def black(self) -> str:        return '\x1b[30m'
+
+    @property
+    def red(self) -> str:          return '\x1b[31m'
+
+    @property
+    def green(self) -> str:        return '\x1b[32m'
+
+    @property
+    def yellow(self) -> str:       return '\x1b[33m'
+
+    @property
+    def blue(self) -> str:         return '\x1b[34m'
+
+    @property
+    def magenta(self) -> str:      return '\x1b[35m'
+
+    @property
+    def cyan(self) -> str:         return '\x1b[36m'
+
+    @property
+    def white(self) -> str:        return '\x1b[37m'
+
+    @property
+    def bright_black(self) -> str:   return '\x1b[90m'
+
+    @property
+    def bright_red(self) -> str:     return '\x1b[91m'
+
+    @property
+    def bright_green(self) -> str:   return '\x1b[92m'
+
+    @property
+    def bright_yellow(self) -> str:  return '\x1b[93m'
+
+    @property
+    def bright_blue(self) -> str:    return '\x1b[94m'
+
+    @property
+    def bright_magenta(self) -> str: return '\x1b[95m'
+
+    @property
+    def bright_cyan(self) -> str:    return '\x1b[96m'
+
+    @property
+    def bright_white(self) -> str:   return '\x1b[97m'
+
+    # ── 16 background colours ──────────────────────────────────────────────
+    @property
+    def on_black(self) -> str:        return '\x1b[40m'
+
+    @property
+    def on_red(self) -> str:          return '\x1b[41m'
+
+    @property
+    def on_green(self) -> str:        return '\x1b[42m'
+
+    @property
+    def on_yellow(self) -> str:       return '\x1b[43m'
+
+    @property
+    def on_blue(self) -> str:         return '\x1b[44m'
+
+    @property
+    def on_magenta(self) -> str:      return '\x1b[45m'
+
+    @property
+    def on_cyan(self) -> str:         return '\x1b[46m'
+
+    @property
+    def on_white(self) -> str:        return '\x1b[47m'
+
+    @property
+    def on_bright_black(self) -> str:   return '\x1b[100m'
+
+    @property
+    def on_bright_red(self) -> str:     return '\x1b[101m'
+
+    @property
+    def on_bright_green(self) -> str:   return '\x1b[102m'
+
+    @property
+    def on_bright_yellow(self) -> str:  return '\x1b[103m'
+
+    @property
+    def on_bright_blue(self) -> str:    return '\x1b[104m'
+
+    @property
+    def on_bright_magenta(self) -> str: return '\x1b[105m'
+
+    @property
+    def on_bright_cyan(self) -> str:    return '\x1b[106m'
+
+    @property
+    def on_bright_white(self) -> str:   return '\x1b[107m'
+
+    # ── 256-colour helpers ─────────────────────────────────────────────────
+    def color(self, n: int) -> str:
+        """Return 256-colour foreground escape for colour index n."""
+        return f'\x1b[38;5;{n}m'
+
+    def on_color(self, n: int) -> str:
+        """Return 256-colour background escape for colour index n."""
+        return f'\x1b[48;5;{n}m'
+
+    # ── fallback for any other blessed attribute ───────────────────────────
+    def __getattr__(self, name: str) -> str:
+        """Return empty string for any unrecognised terminal attribute."""
+        return ''
 
     @property
     def clear(self) -> str:
