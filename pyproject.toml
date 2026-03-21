@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tui-wysiwyg"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = ["blessed>=1.20"]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tui_wysiwyg*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
