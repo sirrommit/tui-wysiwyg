@@ -5,7 +5,7 @@ A Python library for building rich terminal user interfaces from a WYSIWYG layou
 You describe the visual structure of a TUI screen as a formatted string, assign interaction behaviors to named regions, and call `shell.run()`. The library handles rendering, keyboard input, focus management, and inter-region communication.
 
 ```
-|=100%============ My App ==============|
+|=100%========== <bold;color=cyan>My App</> ===========|
 |{30%  12R  $menu$   }|{  12R  $info$  }|
 |=======================================|
 ```
@@ -79,6 +79,102 @@ Every line is either a **border row** or a **column row**.
 |=====================================|      ← double border row (footer)
 ```
 
+### C-Style Comments
+
+Shell definition strings support `/* ... */` comments. Comments are stripped before parsing and never appear in the rendered TUI. Use them to annotate complex layouts without affecting the output. Multi-line comments are supported.
+
+```python
+LAYOUT = """
+/* Main application layout — three-column design.                    */
+/* Left: navigation menu.  Center: content.  Right: detail panel.   */
+|=100%========================= <bold>My App</> =======================|
+|{25%  12R  $nav$    }|{50%  12R  $content$ }|{  12R  $detail$  }|
+|{                   }|{                    }|{                 }|
+|====================================================================|
+|{100%  2R  $status$                                                 }| /* status bar */
+|====================================================================|
+"""
+```
+
+### Style Tags
+
+Border row titles (and heading text) can contain style tags to apply colors and text attributes. Style tags degrade gracefully: if a terminal doesn't support an attribute, that attribute is silently skipped and the plain text is still displayed.
+
+**Tag format:**
+
+```
+<attr[=value][;attr[=value]...]>text</>
+```
+
+The closing tag `</>` resets all styles. A named closing tag like `</bold>` works identically to `</>`.
+
+**Text styles:**
+
+| Tag | Effect |
+|-----|--------|
+| `<bold>` | Bold / bright |
+| `<dim>` | Dim / faint |
+| `<italic>` | Italic |
+| `<underline>` or `<ul>` | Underline |
+| `<blink>` or `<flash>` | Blinking |
+| `<reverse>` or `<invert>` | Reverse video (swap fg/bg) |
+| `<standout>` | Standout (often same as reverse) |
+| `<strike>` or `<strikethrough>` | Strikethrough |
+| `<normal>` or `<reset>` | Explicit reset |
+
+**Color attributes:**
+
+Foreground: `color=`, `fg=`, `foreground=`, `fg-color=`, `text-color=`
+
+Background: `bg=`, `background=`, `bg-color=`, `bgcolor=`, `background-color=`
+
+**Named colors:**
+
+| Value | Meaning |
+|-------|---------|
+| `black`, `red`, `green`, `yellow` | Standard 16-colour foreground/background |
+| `blue`, `magenta`, `cyan`, `white` | Standard 16-colour foreground/background |
+| `bright_black`, `bright_red`, … | Bright variants (prefix `bright_`) |
+| `gray` / `grey` | Alias for `bright_black` |
+| `purple` | Alias for `magenta` |
+| `pink` | Alias for `bright_magenta` |
+| `orange` | Alias for `yellow` (closest 16-colour match) |
+| `lime` | Alias for `bright_green` |
+| `teal` | Alias for `cyan` |
+| `navy` | Alias for `blue` |
+| `maroon` | Alias for `red` |
+| `0`–`255` | 256-colour index |
+
+**Multiple attributes** are separated by `;`:
+
+```python
+LAYOUT = """
+|=== <bold;color=cyan>Welcome</> ===|
+|=== <color=white;bg=blue>Status</> ===|
+|=== <bold;underline;color=bright_yellow>Alert!</> ===|
+|{ 8R $menu$ }|
+|======================|
+"""
+```
+
+**Rendering styled text in regions:**
+
+Style tags only apply to border titles out of the box. To draw styled text inside a region (e.g. in a `Function` handler), use `render_styled()`:
+
+```python
+from tui_wysiwyg.style import render_styled, styled_plain_text, styled_visual_len
+
+# Inside a Function handler:
+def my_handler(shell, region, key):
+    term = shell.terminal
+    line = render_styled("<bold;color=red>Error:</> something went wrong", term)
+    print(term.move(region.row, region.col) + line)
+```
+
+`render_styled(text, term, max_len=None)` returns a string containing terminal escape sequences. `max_len` truncates based on visible character count (not escape sequence length).
+
+---
+
 ### Border Rows
 
 | Syntax | Renders as |
@@ -87,6 +183,7 @@ Every line is either a **border row** or a **column row**.
 | `\|----\|` | Single horizontal line (───) |
 | `\|=== Title ===\|` | Double line with centered title |
 | `\|--- Section ---\|` | Single line with centered title |
+| `\|=== <bold>Title</> ===\|` | Double line with styled title |
 
 ### Column Blocks
 
@@ -711,6 +808,7 @@ tui_wysiwyg/
 ├── renderer.py              # Terminal rendering
 ├── events.py                # Keyboard input
 ├── observer.py              # ChangeHandle, Observer
+├── style.py                 # Style tag parsing, render_styled(), strip_comments()
 ├── exceptions.py            # ShellSyntaxError, RegionNotFoundError, CircularUpdateError
 ├── testing.py               # MockTerminal
 └── interactions/

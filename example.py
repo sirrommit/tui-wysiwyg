@@ -2,13 +2,14 @@
 """
 tui-wysiwyg demo application.
 
-Walks through five separate shells, each showcasing different interaction types:
+Walks through six separate shells, each showcasing different features:
 
   Shell 1  — Main Menu         (MenuReturn, ListView)
   Shell 2  — Catalog Browser   (MenuReturn, SubList, ListView, shell.bind)
   Shell 3  — Note Editor       (TextBox, CheckBox, shell.on_change)
   Shell 4  — Settings Form     (FormInput — all five field types)
   Shell 5  — Custom Widget     (Function, MenuFunction)
+  Shell 6  — Style Demo        (style tags, C-style comments, Function rendering)
 
 Run with:
     python3 example.py
@@ -20,6 +21,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import blessed
 from tui_wysiwyg import Shell
+from tui_wysiwyg.style import render_styled
 
 # A single terminal instance is shared across all shells.
 # Creating multiple blessed.Terminal objects for the same TTY causes state
@@ -41,12 +43,17 @@ from tui_wysiwyg.interactions import (
 # ---------------------------------------------------------------------------
 # Shell 1 — Main Menu
 # Uses: MenuReturn (navigation), ListView (static info panel)
+#
+# Note the style tags in the border title:
+#   <bold;color=cyan>tui-wysiwyg Demo</>
+# They render with color on capable terminals and degrade to plain text
+# on terminals that don't support the attribute.
 # ---------------------------------------------------------------------------
 
 MAIN_LAYOUT = """\
-|=100%================================== tui-wysiwyg Demo ==================================|
+|=100%========================= <bold;color=cyan>tui-wysiwyg Demo</> ==========================|
 |{32%  __Demos__                         }|{  __About__                                   }|
-|{14R  $menu$                            }|{14R  $about$                                  }|
+|{16R  $menu$                            }|{16R  $about$                                  }|
 |{                                        }|{                                              }|
 |===========================================================================================|
 |{100%  2R  $status$                                                                        }|
@@ -54,9 +61,9 @@ MAIN_LAYOUT = """\
 """
 
 ABOUT_TEXT = [
-    "This demo walks through the five",
-    "interaction types built into",
-    "tui-wysiwyg.",
+    "This demo walks through the",
+    "interaction types and features",
+    "built into tui-wysiwyg.",
     "",
     "Navigation:",
     "  Tab / Shift+Tab  switch focus",
@@ -73,7 +80,8 @@ DEMO_CHOICES = {
     "2. Note Editor":      "notes",
     "3. Settings Form":    "settings",
     "4. Custom Widget":    "custom",
-    "5. Quit":             None,
+    "5. Style Demo":       "styles",
+    "6. Quit":             None,
 }
 
 STATUS_HINTS = {
@@ -81,6 +89,7 @@ STATUS_HINTS = {
     "notes":    "TextBox + CheckBox + shell.on_change()",
     "settings": "FormInput (str / int / float / bool / choices)",
     "custom":   "Function + MenuFunction",
+    "styles":   "style tags, C-style comments, render_styled()",
     None:       "Bye!",
 }
 
@@ -91,13 +100,13 @@ def run_main_menu() -> str | None:
     menu = MenuReturn(DEMO_CHOICES)
     shell.assign("menu", menu)
     shell.assign("about", ListView(ABOUT_TEXT, bullet="-"))
-    shell.assign("status", ListView(["Use ↑ ↓ to navigate, Enter to open a demo."]))
+    shell.assign("status", ListView(["Use \u2191 \u2193 to navigate, Enter to open a demo."]))
 
     # Update the status bar whenever the highlighted menu item changes.
     def on_menu_change(label):
         key = DEMO_CHOICES.get(label)
         hint = STATUS_HINTS.get(key, "")
-        shell.update("status", [f"  {label}  —  {hint}" if hint else f"  {label}"])
+        shell.update("status", [f"  {label}  \u2014  {hint}" if hint else f"  {label}"])
 
     shell.on_change("menu", on_menu_change)
 
@@ -111,7 +120,7 @@ def run_main_menu() -> str | None:
 # ---------------------------------------------------------------------------
 
 CATALOG_LAYOUT = """\
-|=100%================================ Catalog Browser ====================================|
+|=100%================================ <bold>Catalog Browser</> ====================================|
 |{28%  __Category__    }|{38%  __Contents__              }|{  __Details__                }|
 |{16R  $category$      }|{16R  $contents$                }|{16R  $details$               }|
 |{                     }|{                               }|{                             }|
@@ -225,18 +234,12 @@ def run_catalog():
         transform=lambda cat: CATALOG_DATA.get(cat, {}).get("details", []),
     )
 
-    # Also update the status bar.
     def on_category_change(cat):
-        count = sum(
-            1 for item in CATALOG_DATA.get(cat, {}).get("contents", [])
-            if isinstance(item, str) and item not in
-            [x for x in CATALOG_DATA.get(cat, {}).get("contents", []) if isinstance(x, list)]
-        )
         shell.update("status", [f"  Category: {cat}  |  Tab to switch panels  |  Ctrl+Q to go back"])
 
     shell.on_change("category", on_category_change)
 
-    shell.run()   # Ctrl+Q returns None; we discard it and go back to main menu
+    shell.run()
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +249,7 @@ def run_catalog():
 # ---------------------------------------------------------------------------
 
 NOTE_LAYOUT = """\
-|=100%=================================== Note Editor ====================================|
+|=100%=================================== <bold>Note Editor</> ====================================|
 |{60%  __Note__                          }|{  __Tags__                                   }|
 |{18R  $note$                            }|{18R  $tags$                                  }|
 |{                                        }|{                                            }|
@@ -313,13 +316,13 @@ def run_notes():
 # ---------------------------------------------------------------------------
 
 FORM_LAYOUT = """\
-|=100%================================= Settings Form =====================================|
+|=100%================================= <bold>Settings Form</> =====================================|
 |{100%  24R  $form$                                                                         }|
 |===========================================================================================|
 """
 
 RESULT_LAYOUT = """\
-|=100%================================ Submission Result ==================================|
+|=100%================================ <bold>Submission Result</> ==================================|
 |{100%  __Your settings were saved:__                                                      }|
 |{18R   $result$                                                                           }|
 |{                                                                                         }|
@@ -358,7 +361,7 @@ def run_settings():
             "type":        "float",
             "descriptor":  "Opacity",
             "default":     1.0,
-            "placeholder": "0.0 – 1.0",
+            "placeholder": "0.0 \u2013 1.0",
             "validator":   lambda v: True if 0.0 <= v <= 1.0 else "Must be between 0.0 and 1.0",
         },
         "dark_mode": {
@@ -403,7 +406,7 @@ def run_settings():
 # ---------------------------------------------------------------------------
 
 CUSTOM_LAYOUT = """\
-|=100%================================ Custom Widget Demo =================================|
+|=100%================================ <bold>Custom Widget Demo</> =================================|
 |{30%  __Commands__               }|{  __Canvas__                                        }|
 |{16R  $commands$                 }|{16R  $canvas$                                       }|
 |{                                }|{                                                    }|
@@ -413,7 +416,6 @@ CUSTOM_LAYOUT = """\
 """
 
 # Shared mutable state for the Function canvas handler.
-# (A class with __call__ would be cleaner in production code.)
 _canvas_state = {"pattern": "grid", "char": "#"}
 
 PATTERNS = {
@@ -426,7 +428,7 @@ PATTERNS = {
         for r in range(h)
     ],
     "checkerboard": lambda w, h: [
-        "".join("█" if (r + c) % 2 == 0 else "░" for c in range(w))
+        "".join("\u2588" if (r + c) % 2 == 0 else "\u2591" for c in range(w))
         for r in range(h)
     ],
     "border": lambda w, h: [
@@ -470,8 +472,8 @@ def run_custom():
     def set_pattern(name):
         def handler(sh):
             _canvas_state["pattern"] = name
-            sh.update("canvas", None)    # trigger re-render via set_value+dirty
-            sh.update("hint",   [f"  Pattern: {name}  |  Use ↑ ↓ to choose a command, Enter to run"])
+            sh.update("canvas", None)
+            sh.update("hint",   [f"  Pattern: {name}  |  Use \u2191 \u2193 to choose, Enter to run"])
         return handler
 
     shell.assign("commands", MenuFunction({
@@ -487,8 +489,161 @@ def run_custom():
         "  Select a pattern with Enter  |  Tab to switch to canvas  |  Ctrl+Q to go back",
     ]))
 
-    # Trigger the initial pattern draw.
     _canvas_state["pattern"] = "grid"
+
+    shell.run()
+
+
+# ---------------------------------------------------------------------------
+# Shell 6 — Style Demo
+#
+# Demonstrates C-style comments and style tags:
+#
+#   Comments  /* ... */   are stripped before parsing — they never appear
+#             in the rendered TUI, so you can annotate complex layouts
+#             without affecting the output.
+#
+#   Style tags  <attr[=val][;...]>text</>  apply terminal attributes to
+#               border titles.  Every attribute degrades gracefully to
+#               plain text when the terminal doesn't support it.
+#
+# The layout string below uses both features:
+# ---------------------------------------------------------------------------
+
+STYLE_LAYOUT = """\
+/* Style Demo shell                                                          */
+/* The title below uses <bold;color=bright_yellow> style tags.               */
+/* Comments like these are stripped before parsing — they never appear in    */
+/* the rendered TUI, but you can use them to annotate complex layouts.       */
+|=100%================ <bold;color=bright_yellow>Style Tag Demo</> =================|
+|{45%  __Syntax Reference__       }|{  __Live Preview__                   }|
+|{20R  $reference$                }|{20R  $preview$                       }|
+|{                                }|{                                      }|
+|=========================================================================|
+|{100%  2R  $footer$                                                       }|
+|=========================================================================|
+"""  # The title above demonstrates a multi-attribute style tag.
+
+# ── Reference panel content ─────────────────────────────────────────────────
+
+STYLE_REFERENCE = [
+    "-- Text styles --",
+    "<bold>text</>         bold",
+    "<dim>text</>          dim / faint",
+    "<italic>text</>       italic",
+    "<underline>text</>    underline",
+    "<blink>text</>        blink",
+    "<reverse>text</>      reverse video",
+    "<strike>text</>       strikethrough",
+    "",
+    "-- Colours --",
+    "<color=NAME>text</>   foreground",
+    "<bg=NAME>text</>      background",
+    "",
+    "-- Named colours --",
+    "red, green, blue",
+    "yellow, cyan, magenta",
+    "white, black",
+    "bright_red, bright_green",
+    "bright_blue, bright_yellow",
+    "bright_cyan, bright_magenta",
+    "bright_white, bright_black",
+    "",
+    "-- Aliases --",
+    "gray/grey -> bright_black",
+    "purple    -> magenta",
+    "pink      -> bright_magenta",
+    "orange    -> yellow",
+    "navy      -> blue",
+    "teal      -> cyan",
+    "",
+    "-- Multiple attrs --",
+    "<bold;color=red>",
+    "<color=white;bg=blue>",
+    "<bold;underline;color=cyan>",
+    "",
+    "-- Closing tags --",
+    "</>         resets all",
+    "</bold>     also resets",
+]
+
+# ── Preview panel: styled text rendered by a Function handler ────────────────
+#
+# The preview panel uses Function + render_styled() to draw styled text
+# lines directly to the terminal, demonstrating what each style tag looks
+# like in practice.
+
+_STYLE_EXAMPLES = [
+    # (tagged text string, plain-text label for the right column)
+    ("<bold>Bold</> text",                           "bold"),
+    ("<dim>Dim</> text",                             "dim"),
+    ("<italic>Italic</> text",                       "italic"),
+    ("<underline>Underlined</> text",                "underline"),
+    ("<blink>Blinking</> text",                      "blink"),
+    ("<reverse>Reverse video</>",                    "reverse"),
+    ("<strike>Strikethrough</> text",                "strike"),
+    ("",                                             ""),
+    ("<color=red>Red foreground</>",                 "color=red"),
+    ("<color=green>Green foreground</>",             "color=green"),
+    ("<color=blue>Blue foreground</>",               "color=blue"),
+    ("<color=yellow>Yellow foreground</>",           "color=yellow"),
+    ("<color=cyan>Cyan foreground</>",               "color=cyan"),
+    ("<color=magenta>Magenta foreground</>",         "color=magenta"),
+    ("<color=bright_red>Bright red</>",              "color=bright_red"),
+    ("<color=bright_green>Bright green</>",          "color=bright_green"),
+    ("<color=gray>Gray (bright_black)</>",           "color=gray"),
+    ("",                                             ""),
+    ("<bg=red>Red background</>",                    "bg=red"),
+    ("<bg=blue>Blue background</>",                  "bg=blue"),
+    ("<bg=green>Green background</>",                "bg=green"),
+    ("<bg=yellow;color=black>Yellow bg</>",          "bg=yellow;color=black"),
+    ("",                                             ""),
+    ("<bold;color=bright_green>Bold bright green</>",     "bold;color=bright_green"),
+    ("<color=white;bg=blue>White on blue</>",             "color=white;bg=blue"),
+    ("<bold;underline;color=cyan>Multi-style</>",         "bold;underline;color=cyan"),
+    ("<bold;color=bright_yellow>Like the title!</>",      "bold;color=bright_yellow"),
+]
+
+
+def style_preview_handler(shell, region, key):
+    """
+    Function handler for the style preview panel.
+
+    Calls render_styled() for each example line, which applies terminal
+    escape sequences and falls back gracefully to plain text.
+    """
+    term = shell.terminal
+    for i, (tagged, _label) in enumerate(_STYLE_EXAMPLES):
+        row = region.row + i
+        if row >= region.row + region.height:
+            break
+        # Clear the row first so previous content doesn't bleed through.
+        print(term.move(row, region.col) + " " * region.width, end="", flush=False)
+        if tagged:
+            rendered = render_styled("  " + tagged, term, max_len=region.width)
+            print(term.move(row, region.col) + rendered, end="", flush=False)
+
+
+def run_style():
+    """
+    Style Tag Demo.
+
+    Demonstrates:
+      - C-style /* ... */ comments in shell definition strings
+      - Style tags (<bold>, <color=red>, <bg=blue;color=white>, …) in border titles
+      - render_styled() used directly inside a Function handler to draw
+        styled text anywhere in a region
+      - Graceful fallback: each attribute is applied independently, so
+        unsupported attributes are silently skipped
+    """
+    shell = Shell(STYLE_LAYOUT, _terminal=_TERM)
+
+    shell.assign("reference", ListView(STYLE_REFERENCE, bullet=" "))
+    shell.assign("preview",   Function(style_preview_handler))
+    shell.assign("footer",    ListView([
+        "  Style tags work in border titles today; use render_styled() for"
+        " styled content inside regions.  Ctrl+Q to go back.",
+    ]))
 
     shell.run()
 
@@ -508,7 +663,6 @@ def main():
         choice = run_main_menu()
 
         if choice is None:
-            # "Quit" was selected (or Ctrl+Q).
             print("\nThanks for trying tui-wysiwyg!")
             break
         elif choice == "catalog":
@@ -519,7 +673,8 @@ def main():
             run_settings()
         elif choice == "custom":
             run_custom()
-        # Any other value (shouldn't happen) loops back to main menu.
+        elif choice == "styles":
+            run_style()
 
 
 if __name__ == "__main__":
