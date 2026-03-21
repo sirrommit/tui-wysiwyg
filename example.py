@@ -81,16 +81,18 @@ DEMO_CHOICES = {
     "3. Settings Form":    "settings",
     "4. Custom Widget":    "custom",
     "5. Style Demo":       "styles",
-    "6. Quit":             None,
+    "6. Shell File Demo":  "shell_file",
+    "7. Quit":             None,
 }
 
 STATUS_HINTS = {
-    "catalog":  "MenuReturn + SubList + ListView + shell.bind()",
-    "notes":    "TextBox + CheckBox + shell.on_change()",
-    "settings": "FormInput (str / int / float / bool / choices)",
-    "custom":   "Function + MenuFunction",
-    "styles":   "style tags, C-style comments, render_styled()",
-    None:       "Bye!",
+    "catalog":    "MenuReturn + SubList + ListView + shell.bind()",
+    "notes":      "TextBox + CheckBox + shell.on_change()",
+    "settings":   "FormInput (str / int / float / bool / choices)",
+    "custom":     "Function + MenuFunction",
+    "styles":     "style tags, C-style comments, render_styled()",
+    "shell_file": "layout loaded from example.shell at runtime",
+    None:         "Bye!",
 }
 
 
@@ -649,6 +651,173 @@ def run_style():
 
 
 # ---------------------------------------------------------------------------
+# Shell 7 — Shell File Demo
+#
+# Reads example.shell from disk at runtime and passes its contents to
+# Shell().  This shows users exactly how an external .shell file renders
+# without hard-coding the definition string in Python.
+# ---------------------------------------------------------------------------
+
+# Reference data used by the sidemenu callbacks.
+_SHELL_FILE_DETAILS = {
+    "overview": [
+        "tui-wysiwyg is a Python library",
+        "for building rich TUIs from a",
+        "WYSIWYG layout definition.",
+        "",
+        "Define your layout as an ASCII",
+        "diagram, assign interactions,",
+        "and call shell.run().",
+    ],
+    "start": [
+        "pip install tui-wysiwyg",
+        "",
+        "from tui_wysiwyg import Shell",
+        "from tui_wysiwyg.interactions \\",
+        "    import MenuReturn",
+        "",
+        "shell = Shell(LAYOUT)",
+        "shell.assign('menu',",
+        "    MenuReturn({'Quit': None}))",
+        "shell.run()",
+    ],
+    "interactions": [
+        "MenuReturn   return a value",
+        "MenuFunction call a function",
+        "MenuHybrid   both",
+        "TextBox      text entry",
+        "ListView     display list",
+        "SubList      nested list",
+        "CheckBox     toggles",
+        "FormInput    data entry form",
+        "Function     custom handler",
+    ],
+    "styling": [
+        "Style tags in border titles:",
+        "",
+        "  <bold>text</>",
+        "  <color=red>text</>",
+        "  <bg=blue;color=white>",
+        "    text</>",
+        "",
+        "C-style comments: /* ... */",
+        "",
+        "render_styled() for content",
+        "inside Function handlers.",
+    ],
+    "testing": [
+        "from tui_wysiwyg.testing \\",
+        "    import MockTerminal",
+        "",
+        "term = MockTerminal(80, 24)",
+        "shell = Shell(LAYOUT,",
+        "    _terminal=term)",
+        "term.feed_keys(['KEY_ENTER'])",
+        "result = shell.run()",
+    ],
+    "api": [
+        "shell.assign(name, interaction)",
+        "shell.unassign(name)",
+        "shell.get(name)",
+        "shell.update(name, value)",
+        "shell.on_change(name, cb)",
+        "shell.bind(source, target)",
+        "shell.set_focus(name)",
+        "shell.run()",
+    ],
+}
+
+
+def _make_sidemenu_handler(key):
+    """Return a MenuFunction callback that updates text_response for key."""
+    def handler(sh):
+        sh.update("text_response", _SHELL_FILE_DETAILS[key])
+    return handler
+
+
+def run_example_shell():
+    """
+    Shell File Demo.
+
+    Demonstrates:
+      - Loading a shell definition from a .shell file at runtime
+      - Shell() accepts any string, so file-based definitions work
+        identically to inline strings
+      - A fully populated complex layout: three columns at the top,
+        a mid-layout single-border divider, and a full-width bottom section
+    """
+    shell_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "example.shell")
+    with open(shell_file) as f:
+        definition = f.read()
+
+    shell = Shell(definition, _terminal=_TERM)
+
+    # ── sidemenu: topic picker ─────────────────────────────────────────────
+    shell.assign("sidemenu", MenuFunction({
+        "Overview":        _make_sidemenu_handler("overview"),
+        "Getting Started": _make_sidemenu_handler("start"),
+        "Interactions":    _make_sidemenu_handler("interactions"),
+        "Styling":         _make_sidemenu_handler("styling"),
+        "Testing":         _make_sidemenu_handler("testing"),
+        "API Reference":   _make_sidemenu_handler("api"),
+    }))
+
+    # ── mainmenu: description of the layout file ───────────────────────────
+    shell.assign("mainmenu", TextBox(
+        initial=(
+            "This shell was loaded from example.shell.\n"
+            "\n"
+            "It demonstrates a complex multi-region\n"
+            "layout with:\n"
+            "  - Three top columns (25 / 50 / fill)\n"
+            "  - A mid-layout single-border divider\n"
+            "  - A full-width bottom section\n"
+            "\n"
+            "Tab between regions to explore.\n"
+            "Select a topic in the left menu\n"
+            "to update the bottom panel."
+        ),
+        wrap="word",
+    ))
+
+    # ── info1: library info sidebar ────────────────────────────────────────
+    shell.assign("info1", ListView([
+        "tui-wysiwyg",
+        "",
+        "Python library for",
+        "WYSIWYG TUI layouts.",
+        "",
+        "Layout loaded from:",
+        "  example.shell",
+        "",
+        "Ctrl+Q to go back.",
+    ], bullet=" "))
+
+    # ── textbox: free-form notes area ──────────────────────────────────────
+    shell.assign("textbox", TextBox(
+        initial="Type notes here...",
+        wrap="word",
+    ))
+
+    # ── checkbox: feature flags ────────────────────────────────────────────
+    shell.assign("checkbox", CheckBox({
+        "Comments":  True,
+        "Style tags": True,
+        "MenuReturn": False,
+        "TextBox":   False,
+        "FormInput": False,
+    }, mode="multi"))
+
+    # ── text_response: bottom panel, updated by sidemenu selections ────────
+    shell.assign("text_response", ListView(
+        _SHELL_FILE_DETAILS["overview"],
+        bullet=" ",
+    ))
+
+    shell.run()
+
+
+# ---------------------------------------------------------------------------
 # Entry point — main navigation loop
 # ---------------------------------------------------------------------------
 
@@ -675,6 +844,8 @@ def main():
             run_custom()
         elif choice == "styles":
             run_style()
+        elif choice == "shell_file":
+            run_example_shell()
 
 
 if __name__ == "__main__":
