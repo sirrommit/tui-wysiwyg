@@ -1,13 +1,21 @@
 # tui-wysiwyg
 
-A Python library for building rich terminal user interfaces from a WYSIWYG layout definition language.
+Build terminal UIs from a layout string. The string is the UI.
 
-You describe the visual structure of a TUI screen as a formatted string, assign interaction behaviors to named regions, and call `shell.run()`. The library handles rendering, keyboard input, focus management, and inter-region communication.
-
+```python
+LAYOUT = """
+|=== My App ========================|
+|{30%  8R  $menu$   }|{ 8R  $info$ }|
+|===================================|
+"""
 ```
-|=100%========== <bold;color=cyan>My App</> ===========|
-|{30%  12R  $menu$   }|{  12R  $info$  }|
-|=======================================|
+
+```python
+#  ╔═══ My App ════════════════════╗
+#  ║ > Home          │ Welcome!   ║
+#  ║   About         │            ║
+#  ║   Quit          │            ║
+#  ╚═══════════════════════════════╝
 ```
 
 ```python
@@ -16,10 +24,17 @@ from tui_wysiwyg.interactions import MenuReturn, ListView
 
 shell = Shell(LAYOUT)
 shell.assign("menu", MenuReturn({"Home": "home", "About": "about", "Quit": None}))
-shell.assign("info", ListView(["Select an option from the menu."]))
+shell.assign("info", ListView(["Welcome!"]))
 shell.bind("menu", "info", transform=lambda label: PAGES[label])
 result = shell.run()
 ```
+
+**The layout string is the source of truth.** Column widths, row heights, border
+styles, and region names all come from ASCII art you can read at a glance.
+There is no widget tree to build, no layout engine to configure, no CSS to
+maintain — the rendered screen looks like the string.
+
+Three lines of ASCII, one `.assign()` per region, one `.run()`. Done.
 
 ---
 

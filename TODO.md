@@ -72,12 +72,12 @@ Items are ordered by priority. Complete each group before moving to the next.
 
 ### 7. Rework README top section
 
-- [ ] Replace the current opening with a crisp DSL differentiator story: shell layout string → interaction assignment → working UI
-- [ ] Show a side-by-side (or before/after) of the raw shell definition string and the rendered terminal output
+- [x] Replace the current opening with a crisp DSL differentiator story: shell layout string → interaction assignment → working UI
+- [x] Show a before/after of the raw shell definition string and ASCII-art rendered terminal output
 
 ### 8. Add screenshot or GIF to README
 
-- [ ] Capture a terminal screenshot or `asciinema` recording of `example.py` showing at least one widget (Confirm, FilePicker, or DatePicker)
+- [ ] Capture a terminal screenshot or `asciinema` recording of `example.py` showing at least one widget (Confirm, FilePicker, or DatePicker) — requires interactive terminal session
 - [ ] Link it from the README and `docs/index.md`
 
 ---
