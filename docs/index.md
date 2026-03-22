@@ -56,3 +56,23 @@ Pre-built modal popup widgets built on top of the core library.
 | [widgets/file-picker.md](widgets/file-picker.md) | `FilePicker` — filesystem browser for selecting files or directories |
 | [widgets/date-picker.md](widgets/date-picker.md) | `DatePicker` — monthly calendar for selecting a date |
 | [widgets/progress.md](widgets/progress.md) | `Progress` — programmatically-driven progress bar |
+
+---
+
+## Framework Comparison
+
+How tui-wysiwyg compares to other Python TUI libraries.
+
+| Library | Layout style | Sync / Async | Headless testable | Ceremony |
+|---------|--------------|-------------|-------------------|----------|
+| **tui-wysiwyg** | ASCII-art DSL string, resolved at runtime | Synchronous, blocking `shell.run()` | Yes — `MockTerminal` + key queue; no subprocess needed | Low — layout string + one `.assign()` per region |
+| [Textual](https://github.com/Textualize/textual) | Python class hierarchy (`Widget` subclasses) with CSS | Async (`asyncio`) | Via `Pilot` test client; good coverage | High — class per widget, CSS file, async handlers |
+| [prompt_toolkit](https://github.com/prompt-toolkit/python-prompt-toolkit) | `HSplit`/`VSplit` object tree | Both (sync and async) | Possible but manual; no built-in mock | Medium — layout built with constructor calls, not strings |
+| [urwid](https://github.com/urwid/urwid) | Widget tree (`Pile`, `Columns`) with display attributes | Synchronous, event-loop based | Possible with `raw_display` mock; no built-in helper | Medium — widget tree construction, signal wiring |
+
+**When to choose tui-wysiwyg:**
+
+- You want to describe layout visually as a string and read it at a glance.
+- You need synchronous, non-async code (scripts, CLI tools, data pipelines).
+- You want headless unit tests without spawning a subprocess or running in a real terminal.
+- Low ceremony matters more than a rich widget ecosystem.

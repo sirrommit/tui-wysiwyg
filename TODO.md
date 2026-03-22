@@ -93,9 +93,9 @@ Items are ordered by priority. Complete each group before moving to the next.
 
 ### 10. Framework comparison table
 
-- [ ] Add a comparison section to `docs/index.md` or README
-- [ ] Table columns: Library, Layout style, Sync/Async, Testability, Ceremony
-- [ ] Entries: tui_wysiwyg, Textual, prompt_toolkit, urwid
+- [x] Add a comparison section to `docs/index.md` and README
+- [x] Table columns: Library, Layout style, Sync/Async, Testability, Ceremony
+- [x] Entries: tui_wysiwyg, Textual, prompt_toolkit, urwid
 
 ---
 

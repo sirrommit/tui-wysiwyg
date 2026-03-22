@@ -985,3 +985,16 @@ Full documentation lives in [`docs/`](docs/):
 | [`docs/testing.md`](docs/testing.md) | Testing strategy and MockTerminal |
 | [`docs/interactions/`](docs/interactions/) | One page per interaction type |
 | [`docs/widgets/`](docs/widgets/) | One page per pre-built widget |
+
+---
+
+## Comparison
+
+| Library | Layout | Sync/Async | Headless tests | Ceremony |
+|---------|--------|-----------|----------------|----------|
+| **tui-wysiwyg** | ASCII-art DSL string | Sync | `MockTerminal` built-in | Low |
+| Textual | CSS + widget classes | Async | `Pilot` client | High |
+| prompt_toolkit | `HSplit`/`VSplit` objects | Both | Manual | Medium |
+| urwid | Widget tree | Sync | Manual | Medium |
+
+**Choose tui-wysiwyg** when you want declarative ASCII layout, synchronous callbacks, and headless unit tests with zero subprocess overhead.
