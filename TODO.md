@@ -22,10 +22,10 @@ Items are ordered by priority. Complete each group before moving to the next.
 
 ### 2. Terminal IXON settings not restored after `Shell.run()`
 
-- [ ] In `shell.py`, capture `old_attrs = termios.tcgetattr(fd)` before mutating
-- [ ] Wrap the event loop in a `try/finally` that calls `termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)`
-- [ ] Add test: mock `tcgetattr`/`tcsetattr`, run `Shell.run()` with immediate exit, assert restore is called
-- [ ] Add test: verify restore happens on `Ctrl+Q` exit path
+- [x] In `shell.py`, capture `old_attrs = termios.tcgetattr(fd)` before mutating
+- [x] Wrap the event loop in a `try/finally` that calls `termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)`
+- [x] Add test: mock `tcgetattr`/`tcsetattr`, run `Shell.run()` with immediate exit, assert restore is called
+- [x] Add test: verify restore happens on `Ctrl+Q` exit path
 
 ### 3. `FormInput` boolean default parsing silently inverts intent
 

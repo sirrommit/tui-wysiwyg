@@ -155,79 +155,94 @@ class Shell:
             # Disable XON/XOFF flow control so Ctrl+Q (0x11) reaches the app.
             # term.cbreak() does not clear IXON, leaving Ctrl+Q intercepted by
             # the terminal driver on most Linux/macOS systems.
+            # Save original attrs so we can restore them on every exit path.
+            _saved_attrs = None
             if _HAS_TERMIOS and hasattr(term, '_keyboard_fd'):
                 try:
-                    attrs = _termios.tcgetattr(term._keyboard_fd)
+                    _saved_attrs = _termios.tcgetattr(term._keyboard_fd)
+                    attrs = list(_saved_attrs)
                     attrs[0] &= ~_termios.IXON
                     _termios.tcsetattr(term._keyboard_fd, _termios.TCSANOW, attrs)
                 except Exception:
-                    pass
+                    _saved_attrs = None
 
-            # Initial full render
-            renderer.full_render(
-                self._layout,
-                self._regions,
-                self._interactions,
-                self._focused,
-                w,
-                h,
-            )
-            sys.stdout.flush()
-
-            while not self._should_exit:
-                key = event_loop.next_key()
-                if key is None or not key:
-                    continue
-
-                key_str = str(key)
-
-                # Ctrl+Q to exit
-                if key_str == chr(17):
-                    return None
-
-                # Tab / Shift+Tab for focus movement
-                if key.is_sequence and key.name == 'KEY_BTAB':
-                    self._move_focus(-1)
-                elif key_str == '\t':
-                    self._move_focus(1)
-                elif self._focused and self._focused in self._interactions:
-                    interaction = self._interactions[self._focused]
-                    changed, value = interaction.handle_key(key)
-                    # Always redraw after any keypress (cursor move, nav, etc.)
-                    self._dirty.add(self._focused)
-                    if changed:
-                        self._observer.notify(self._focused, value)
-
-                    # Check for exit signal
-                    should_exit, rv = interaction.signal_return()
-                    if should_exit:
-                        return rv
-
-                # Handle resize
-                if key.is_sequence and hasattr(key, 'name') and key.name == 'KEY_RESIZE':
-                    w = term.width or 80
-                    h = term.height or 24
-                    self._resolve_layout()
-                    renderer.full_render(
-                        self._layout,
-                        self._regions,
-                        self._interactions,
-                        self._focused,
-                        w,
-                        h,
-                    )
-                    sys.stdout.flush()
-                    continue
-
-                # Redraw dirty regions
-                for dirty_name in list(self._dirty):
-                    if dirty_name in self._interactions and dirty_name in self._regions:
-                        region = self._regions[dirty_name]
-                        interaction = self._interactions[dirty_name]
-                        focused = (dirty_name == self._focused)
-                        renderer.render_region(region, interaction, term, focused)
-                self._dirty.clear()
+            try:
+                # Initial full render
+                renderer.full_render(
+                    self._layout,
+                    self._regions,
+                    self._interactions,
+                    self._focused,
+                    w,
+                    h,
+                )
                 sys.stdout.flush()
+
+                while not self._should_exit:
+                    key = event_loop.next_key()
+                    if key is None or not key:
+                        continue
+
+                    key_str = str(key)
+
+                    # Ctrl+Q to exit
+                    if key_str == chr(17):
+                        return None
+
+                    # Tab / Shift+Tab for focus movement
+                    if key.is_sequence and key.name == 'KEY_BTAB':
+                        self._move_focus(-1)
+                    elif key_str == '\t':
+                        self._move_focus(1)
+                    elif self._focused and self._focused in self._interactions:
+                        interaction = self._interactions[self._focused]
+                        changed, value = interaction.handle_key(key)
+                        # Always redraw after any keypress (cursor move, nav, etc.)
+                        self._dirty.add(self._focused)
+                        if changed:
+                            self._observer.notify(self._focused, value)
+
+                        # Check for exit signal
+                        should_exit, rv = interaction.signal_return()
+                        if should_exit:
+                            return rv
+
+                    # Handle resize
+                    if key.is_sequence and hasattr(key, 'name') and key.name == 'KEY_RESIZE':
+                        w = term.width or 80
+                        h = term.height or 24
+                        self._resolve_layout()
+                        renderer.full_render(
+                            self._layout,
+                            self._regions,
+                            self._interactions,
+                            self._focused,
+                            w,
+                            h,
+                        )
+                        sys.stdout.flush()
+                        continue
+
+                    # Redraw dirty regions
+                    for dirty_name in list(self._dirty):
+                        if dirty_name in self._interactions and dirty_name in self._regions:
+                            region = self._regions[dirty_name]
+                            interaction = self._interactions[dirty_name]
+                            focused = (dirty_name == self._focused)
+                            renderer.render_region(region, interaction, term, focused)
+                    self._dirty.clear()
+                    sys.stdout.flush()
+
+            finally:
+                # Restore terminal attributes so IXON is not left disabled
+                # after the TUI exits (covers normal return, Ctrl+Q, exceptions).
+                if _saved_attrs is not None and _HAS_TERMIOS and hasattr(term, '_keyboard_fd'):
+                    try:
+                        _termios.tcsetattr(
+                            term._keyboard_fd, _termios.TCSADRAIN, _saved_attrs
+                        )
+                    except Exception:
+                        pass
 
         return None
 
