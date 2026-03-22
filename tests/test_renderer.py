@@ -2,7 +2,7 @@ import pytest
 import sys
 from tui_wysiwyg.testing import MockTerminal
 from tui_wysiwyg.renderer import Renderer
-from tui_wysiwyg.layout import Region, VSplit, BorderRow, ColumnDef, Panel
+from tui_wysiwyg.layout import Region, HSplit, VSplit, Panel, BorderRow
 from tui_wysiwyg.parser import Parser
 from tui_wysiwyg.interactions import MenuReturn, TextBox
 

@@ -59,7 +59,7 @@ class TestStripComments:
 |==============|
 """
         model = Parser().parse(definition)
-        assert any(hasattr(r, 'columns') for r in model.items)
+        assert model.root is not None
 
 
 # ── parse_styled ────────────────────────────────────────────────────────────

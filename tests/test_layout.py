@@ -1,97 +1,82 @@
 import pytest
 from tui_wysiwyg.layout import (
-    LayoutModel, Region, VSplit, BorderRow, ColumnDef, Panel, PartialBorder,
-    _resolve_col_widths, _resolve_panel_heights,
+    LayoutModel, Region, HSplit, VSplit, Panel, BorderRow,
+    _declared_width, _declared_height,
 )
 from tui_wysiwyg.parser import Parser
 
 
 def make_panel(row_count=None, row_count_is_pct=False, row_pct=None,
-               name=None, heading=None, num_rows_def=1):
-    return Panel(name=name, row_count=row_count, row_count_is_pct=row_count_is_pct,
-                 row_pct=row_pct, heading=heading, num_rows_def=num_rows_def)
+               name=None, heading=None, num_rows_def=1,
+               width=None, is_pct=False, pct=None):
+    return Panel(name=name, heading=heading,
+                 width=width, is_pct=is_pct, pct=pct,
+                 row_count=row_count, row_count_is_pct=row_count_is_pct,
+                 row_pct=row_pct, num_rows_def=num_rows_def)
 
 
-def make_col(width=None, is_percentage=False, pct=None,
-             panels=None, partial_borders=None,
-             double_divider_right=False):
-    return ColumnDef(
-        width=width,
-        is_percentage=is_percentage,
-        pct=pct,
-        double_divider_right=double_divider_right,
-        panels=panels or [make_panel()],
-        partial_borders=partial_borders or [],
-    )
+class TestDeclaredWidth:
+    """Tests for _declared_width via Panel nodes."""
 
-
-class TestResolveColWidths:
     def test_single_fill_column(self):
-        cols = [make_col(width=None, is_percentage=False)]
-        result = _resolve_col_widths(cols, 80)
-        assert result == [78]
+        p = make_panel(width=None, is_pct=False)
+        assert _declared_width(p, 78, 77) == 78
 
     def test_two_equal_pct_columns(self):
-        cols = [
-            make_col(is_percentage=True, pct=50.0),
-            make_col(is_percentage=True, pct=50.0),
-        ]
-        result = _resolve_col_widths(cols, 80)
-        assert result[0] == 38
-        assert result[1] == 38
+        # pct_base for term_width=80, 2 cols: 78 - 1 = 77
+        p = make_panel(is_pct=True, pct=50.0)
+        assert _declared_width(p, 77, 77) == 38
 
-    def test_fixed_and_fill(self):
-        cols = [make_col(width=25), make_col(width=None)]
-        result = _resolve_col_widths(cols, 80)
-        assert result[0] == 25
-        assert result[1] == 52
+    def test_fixed_width(self):
+        p = make_panel(width=25)
+        assert _declared_width(p, 78, 77) == 25
 
-    def test_percentage_and_fill(self):
-        cols = [
-            make_col(is_percentage=True, pct=25.0),
-            make_col(width=None),
-        ]
-        result = _resolve_col_widths(cols, 80)
-        pct_width = int(77 * 0.25)
-        assert result[0] == pct_width
-        assert result[1] == 77 - pct_width
+    def test_percentage_width(self):
+        # pct_base=77, 25% → int(77 * 25 / 100) = 19
+        p = make_panel(is_pct=True, pct=25.0)
+        assert _declared_width(p, 77, 77) == 19
 
-    def test_three_columns(self):
-        cols = [make_col(width=25), make_col(width=25), make_col(width=None)]
-        result = _resolve_col_widths(cols, 80)
-        assert result[0] == 25
-        assert result[1] == 25
-        assert result[2] == 76 - 50
+    def test_hsplit_delegates_to_child(self):
+        panel = make_panel(width=25)
+        node = HSplit(top=panel, bottom=None, border=None)
+        assert _declared_width(node, 78, 77) == 25
+
+    def test_vsplit_takes_all_available(self):
+        node = VSplit(left=make_panel(), right=make_panel(), divider='single')
+        assert _declared_width(node, 78, 77) == 78
 
 
-class TestResolvePanelHeights:
+class TestDeclaredHeight:
+    """Tests for _declared_height via Panel and composite nodes."""
+
     def test_explicit_row_count(self):
-        col = make_col(panels=[make_panel(row_count=12)])
-        result = _resolve_panel_heights(col, 24)
-        assert result == [12]
+        p = make_panel(row_count=12)
+        assert _declared_height(p, 24) == 12
 
     def test_percentage_row_count(self):
-        col = make_col(panels=[make_panel(row_count=50, row_count_is_pct=True, row_pct=50.0)])
-        result = _resolve_panel_heights(col, 24)
-        assert result == [12]
+        p = make_panel(row_count=50, row_count_is_pct=True, row_pct=50.0)
+        assert _declared_height(p, 24) == 12
 
     def test_fallback_to_num_rows_def(self):
-        col = make_col(panels=[make_panel(num_rows_def=5)])
-        result = _resolve_panel_heights(col, 24)
-        assert result == [5]
+        p = make_panel(num_rows_def=5)
+        assert _declared_height(p, 24) == 5
 
     def test_fallback_minimum_one(self):
-        col = make_col(panels=[make_panel(num_rows_def=0)])
-        result = _resolve_panel_heights(col, 24)
-        assert result == [1]
+        p = make_panel(num_rows_def=0)
+        assert _declared_height(p, 24) == 1
 
-    def test_multiple_panels(self):
-        col = make_col(panels=[
-            make_panel(row_count=10),
-            make_panel(row_count=5),
-        ])
-        result = _resolve_panel_heights(col, 24)
-        assert result == [10, 5]
+    def test_hsplit_sums_children(self):
+        top = make_panel(row_count=10)
+        bot = make_panel(row_count=5)
+        node = HSplit(top=top, bottom=bot, border=BorderRow('single', None))
+        # 10 + 1 (border) + 5 = 16
+        assert _declared_height(node, 24) == 16
+
+    def test_vsplit_takes_max_child(self):
+        left = make_panel(row_count=10)
+        right = make_panel(row_count=5)
+        node = VSplit(left=left, right=right, divider='single')
+        assert _declared_height(node, 24) == 10
 
 
 class TestLayoutModelResolve:

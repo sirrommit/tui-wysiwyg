@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -11,145 +11,195 @@ class Region:
 
 
 @dataclass
-class Panel:
-    """A single content leaf within a column."""
-    name: str | None
-    row_count: int | None       # None = infer from num_rows_def
-    row_count_is_pct: bool
-    row_pct: float | None
-    heading: str | None
-    num_rows_def: int = 0       # definition lines in this panel's slot
-
-
-@dataclass
-class PartialBorder:
-    """A horizontal divider between panels within a single column."""
-    style: str   # 'single' or 'double'
-
-
-@dataclass
-class ColumnDef:
-    """One column within a VSplit."""
-    width: int | None       # fixed chars; None = fill remainder
-    is_percentage: bool
-    pct: float | None       # percentage 0..100
-    double_divider_right: bool
-    panels: list            # list[Panel], at least one
-    partial_borders: list   # list[PartialBorder], len == len(panels) - 1
-
-
-@dataclass
-class VSplit:
-    """Columns arranged side by side."""
-    columns: list   # list[ColumnDef]
-
-
-@dataclass
 class BorderRow:
     style: str          # 'single' or 'double'
     title: str | None
 
 
 @dataclass
+class Panel:
+    """Leaf node — a single named (or unnamed) content region."""
+    name: str | None
+    heading: str | None
+    # Width spec
+    width: int | None       # fixed chars; None = fill or use pct
+    is_pct: bool
+    pct: float | None       # percentage 0..100; used when is_pct is True
+    # Height spec
+    row_count: int | None   # None = infer from num_rows_def
+    row_count_is_pct: bool
+    row_pct: float | None
+    num_rows_def: int = 0   # definition lines in this panel's slot
+
+
+@dataclass
+class HSplit:
+    """Horizontal split: top child above a border line, bottom child below."""
+    top: object         # LayoutNode | None
+    bottom: object      # LayoutNode | None
+    border: BorderRow | None
+
+
+@dataclass
+class VSplit:
+    """Vertical split: left and right children side by side."""
+    left: object        # LayoutNode
+    right: object       # LayoutNode
+    divider: str        # 'single' or 'double'
+
+
+# Type alias (for documentation only — Python does not enforce it)
+# LayoutNode = HSplit | VSplit | Panel | None
+
+
+@dataclass
 class LayoutModel:
-    items: list         # list[BorderRow | VSplit], ordered top-to-bottom
+    root: object        # LayoutNode | None
     has_percentage: bool
 
     def resolve(self, term_width: int, term_height: int) -> list:
         """Return a flat list of Region objects with absolute coordinates."""
-        regions = []
-        current_row = 0
+        if self.root is None:
+            return []
+        # Content area: col 1..(term_width-2), row 0..(term_height-1)
+        return _resolve_node(self.root, 0, 1, term_width - 2, term_height,
+                             pct_base=None)
 
-        for item in self.items:
-            if isinstance(item, BorderRow):
-                current_row += 1
-                continue
 
-            vsplit = item
-            col_widths = _resolve_col_widths(vsplit.columns, term_width)
+# ---------------------------------------------------------------------------
+# Recursive resolve
+# ---------------------------------------------------------------------------
 
-            # Resolve all panel heights
-            all_ph = [_resolve_panel_heights(col, term_height) for col in vsplit.columns]
+def _resolve_node(node, row: int, col: int, width: int, height: int,
+                  pct_base: int | None) -> list:
+    """
+    Recursively resolve a layout node to a flat list of Regions.
 
-            # VSplit physical height = max total rows across all columns
-            # Each column's physical rows = sum(panel heights) + number of partial borders
-            vsplit_height = 0
-            for col, ph in zip(vsplit.columns, all_ph):
-                col_phys = sum(ph) + len(col.partial_borders)
-                vsplit_height = max(vsplit_height, col_phys)
-            vsplit_height = max(vsplit_height, 1)
+    row, col   — absolute top-left position of this node
+    width      — available width (excluding outer border chars)
+    height     — available height in terminal rows
+    pct_base   — total interior width used as the denominator for % specs;
+                 None means "compute on first VSplit encountered"
+    """
+    if node is None:
+        return []
 
-            # Stretch the last panel of any column that's shorter than vsplit_height
-            for i, (col, ph) in enumerate(zip(vsplit.columns, all_ph)):
-                col_phys = sum(ph) + len(col.partial_borders)
-                if col_phys < vsplit_height:
-                    all_ph[i][-1] += vsplit_height - col_phys
+    if isinstance(node, Panel):
+        if node.name:
+            return [Region(name=node.name, row=row, col=col,
+                           width=width, height=height)]
+        return []
 
-            # Compute column start positions
-            col_positions = []
-            pos = 1  # after outer left border
-            for i, col in enumerate(vsplit.columns):
-                col_positions.append(pos)
-                pos += col_widths[i] + 1  # +1 for divider
+    if isinstance(node, VSplit):
+        if pct_base is None:
+            num_cols = _num_vsplit_cols(node)
+            # Subtract one divider per internal column boundary
+            pct_base = width - (num_cols - 1)
 
-            # Emit regions
-            for i, (col, ph) in enumerate(zip(vsplit.columns, all_ph)):
-                panel_row = current_row
-                for j, panel in enumerate(col.panels):
-                    h = ph[j]
-                    if panel.name:
-                        regions.append(Region(
-                            name=panel.name,
-                            row=panel_row,
-                            col=col_positions[i],
-                            width=col_widths[i],
-                            height=h,
-                        ))
-                    panel_row += h
-                    if j < len(col.partial_borders):
-                        panel_row += 1  # skip the partial border row
+        left_width = _declared_width(node.left, width - 1, pct_base)
+        right_width = width - left_width - 1
 
-            current_row += vsplit_height
-
+        regions = _resolve_node(node.left, row, col,
+                                left_width, height, pct_base)
+        regions += _resolve_node(node.right, row, col + left_width + 1,
+                                 right_width, height, pct_base)
         return regions
 
+    if isinstance(node, HSplit):
+        top_height = (_declared_height(node.top, height)
+                      if node.top is not None else 0)
+        border_rows = 1 if node.border is not None else 0
+        bottom_height = max(0, height - top_height - border_rows)
 
-def _resolve_col_widths(columns: list, term_width: int) -> list:
-    """Resolve column widths to absolute character counts."""
-    num_cols = len(columns)
-    available = term_width - 2 - (num_cols - 1)
+        regions = []
+        if node.top is not None:
+            regions += _resolve_node(node.top, row, col, width, top_height,
+                                     None)
+        if node.bottom is not None:
+            regions += _resolve_node(node.bottom,
+                                     row + top_height + border_rows,
+                                     col, width, bottom_height, None)
+        return regions
 
-    widths = [None] * num_cols
-    remaining = available
-    fill_index = None
-
-    for i, col in enumerate(columns):
-        if col.width is None and not col.is_percentage:
-            fill_index = i
-        elif col.is_percentage:
-            w = int(available * col.pct / 100)
-            widths[i] = w
-            remaining -= w
-        else:
-            widths[i] = col.width
-            remaining -= col.width
-
-    if fill_index is not None:
-        widths[fill_index] = max(0, remaining)
-
-    return [w if w is not None else 0 for w in widths]
+    return []
 
 
-def _resolve_panel_heights(col: ColumnDef, term_height: int) -> list:
-    """Return a list of resolved heights (ints) for each panel in the column."""
-    heights = []
-    for panel in col.panels:
-        if panel.row_count is not None:
-            if panel.row_count_is_pct:
-                h = int(term_height * panel.row_pct / 100)
-            else:
-                h = panel.row_count
-        else:
-            h = max(1, panel.num_rows_def)
-        heights.append(h)
-    return heights
+# ---------------------------------------------------------------------------
+# Width / height helpers
+# ---------------------------------------------------------------------------
+
+def _declared_width(node, available: int, pct_base: int) -> int:
+    """
+    How wide does this node want to be?
+
+    available  — remaining width at this level (after subtracting the
+                 divider that separates it from its sibling)
+    pct_base   — total interior width for percentage calculations
+    """
+    if node is None:
+        return available
+
+    if isinstance(node, Panel):
+        if node.is_pct and node.pct is not None:
+            return int(pct_base * node.pct / 100)
+        if node.width is not None:
+            return node.width
+        return available  # fill
+
+    if isinstance(node, HSplit):
+        # Both halves of an HSplit share the same width; delegate to a child.
+        child = node.top if node.top is not None else node.bottom
+        return _declared_width(child, available, pct_base)
+
+    if isinstance(node, VSplit):
+        # A VSplit takes all available width.
+        return available
+
+    return available
+
+
+def _declared_height(node, available: int) -> int:
+    """
+    How tall does this node want to be?
+    Panels without an explicit row_count use num_rows_def as a minimum.
+    The caller may give a Panel more height than it declares (stretch).
+    """
+    if node is None:
+        return 0
+
+    if isinstance(node, Panel):
+        if node.row_count is not None:
+            if node.row_count_is_pct and node.row_pct is not None:
+                return int(available * node.row_pct / 100)
+            return node.row_count
+        return max(1, node.num_rows_def)
+
+    if isinstance(node, VSplit):
+        lh = _declared_height(node.left, available)
+        rh = _declared_height(node.right, available)
+        return max(lh, rh)
+
+    if isinstance(node, HSplit):
+        top_h = (_declared_height(node.top, available)
+                 if node.top is not None else 0)
+        border_h = 1 if node.border is not None else 0
+        bot_h = (_declared_height(node.bottom, available)
+                 if node.bottom is not None else 0)
+        return top_h + border_h + bot_h
+
+    return 0
+
+
+def _num_vsplit_cols(node) -> int:
+    """Count the total number of leaf Panel columns in a node's subtree."""
+    if node is None:
+        return 0
+    if isinstance(node, Panel):
+        return 1
+    if isinstance(node, VSplit):
+        return _num_vsplit_cols(node.left) + _num_vsplit_cols(node.right)
+    if isinstance(node, HSplit):
+        # Both halves of an HSplit are in the same column — count one side.
+        child = node.top if node.top is not None else node.bottom
+        return _num_vsplit_cols(child)
+    return 1

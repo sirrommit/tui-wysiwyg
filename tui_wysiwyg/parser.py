@@ -1,280 +1,244 @@
 import re
-from .layout import LayoutModel, VSplit, BorderRow, ColumnDef, Panel, PartialBorder
+from .layout import LayoutModel, HSplit, VSplit, Panel, BorderRow
 from .style import strip_comments
+from .exceptions import ShellSyntaxError
 
 
 class Parser:
     def parse(self, definition: str) -> LayoutModel:
         definition = strip_comments(definition)
-        lines = definition.split('\n')
+        raw_lines = definition.split('\n')
 
-        processed = []
-        for i, line in enumerate(lines, 1):
+        processed = []  # list of (lineno, inner_string)
+        for i, line in enumerate(raw_lines, 1):
             stripped = line.strip()
-            if stripped:
-                processed.append((i, stripped))
+            if not stripped:
+                continue
+            if not (stripped.startswith('|') and stripped.endswith('|')):
+                raise ShellSyntaxError("missing outer border", line=i)
+            inner = stripped[1:-1]
+            processed.append((i, inner))
 
         if not processed:
-            return LayoutModel(items=[], has_percentage=False)
+            return LayoutModel(root=None, has_percentage=False)
 
-        items = []
-        has_percentage = False
         seen_names = set()
-        section_lines = []   # (lineno, inner) pairs for the current section
-
-        def flush_section():
-            nonlocal has_percentage
-            if section_lines:
-                vsplit, pct, new_names = _parse_section(section_lines, seen_names)
-                for name in new_names:
-                    seen_names.add(name)
-                if pct:
-                    has_percentage = True
-                items.append(vsplit)
-                section_lines.clear()
-
-        for lineno, line in processed:
-            if not (line.startswith('|') and line.endswith('|')):
-                raise _syntax_error("missing outer border", lineno)
-
-            inner = line[1:-1]
-
-            if _is_full_border(inner):
-                flush_section()
-                style, title = _parse_border_row(inner, lineno)
-                items.append(BorderRow(style=style, title=title))
-            elif _is_column_row(inner):
-                # Normal column row or partial border row — both go into section
-                section_lines.append((lineno, inner))
-            else:
-                raise _syntax_error("unrecognized row format", lineno)
-
-        flush_section()
-
-        return LayoutModel(items=items, has_percentage=has_percentage)
+        root = _parse_block(processed, seen_names)
+        return LayoutModel(root=root, has_percentage=_contains_pct(root))
 
 
 # ---------------------------------------------------------------------------
-# Line classification
+# Block parsing (recursive)
 # ---------------------------------------------------------------------------
 
-def _is_full_border(inner: str) -> bool:
-    """Full border: starts with = or -, contains no column blocks."""
-    stripped = inner.strip()
-    return bool(stripped) and stripped[0] in ('=', '-') and '{' not in inner
-
-
-def _is_partial_border(inner: str) -> bool:
-    """Partial border: starts with = or - but also has column blocks."""
-    stripped = inner.strip()
-    return bool(stripped) and stripped[0] in ('=', '-') and '{' in inner
-
-
-def _is_column_row(inner: str) -> bool:
-    return '{' in inner
-
-
-# ---------------------------------------------------------------------------
-# Section → VSplit
-# ---------------------------------------------------------------------------
-
-def _parse_section(section_lines: list, seen_names: set):
+def _parse_block(lines, seen_names):
     """
-    Parse a list of (lineno, inner) lines into a VSplit.
-    Returns (VSplit, has_percentage, new_names).
+    Recursively parse a list of (lineno, inner) pairs into a LayoutNode.
+
+    Algorithm:
+      1. Find a full HSplit (border row with no '{') → split there, recurse
+      2. Else find a full VSplit (column divider '|'/'#' in ALL rows) → split, recurse
+      3. Else → parse as a leaf Panel
     """
-    if not section_lines:
-        return VSplit(columns=[]), False, []
+    if not lines:
+        return None
 
-    # First pure column row determines column count and widths.
-    first_col_idx = None
-    for idx, (lineno, inner) in enumerate(section_lines):
-        if _is_column_row(inner) and not _is_partial_border(inner):
-            first_col_idx = idx
-            break
+    # 1. Try horizontal split
+    hi = _find_full_hsplit(lines)
+    if hi is not None:
+        _, border_inner = lines[hi]
+        border = _parse_border(border_inner)
+        top = _parse_block(lines[:hi], seen_names)
+        bottom = _parse_block(lines[hi + 1:], seen_names)
+        return HSplit(top=top, bottom=bottom, border=border)
 
-    if first_col_idx is None:
-        return VSplit(columns=[]), False, []
+    # 2. Try vertical split
+    div_char = _find_full_vsplit(lines)
+    if div_char is not None:
+        left_lines, right_lines = _split_vertical(lines, div_char)
+        return VSplit(
+            left=_parse_block(left_lines, seen_names),
+            right=_parse_block(right_lines, seen_names),
+            divider='double' if div_char == '#' else 'single',
+        )
 
-    first_lineno, first_inner = section_lines[first_col_idx]
-    first_blocks = _parse_column_blocks(first_inner, first_lineno)
-    n_cols = len(first_blocks)
-
-    # '{' positions from the first row — used for partial border detection.
-    col_brace_pos = _get_brace_positions(first_inner)
-
-    # Initialise columns
-    columns = []
-    has_percentage = False
-    for col_inner, divider_right in first_blocks:
-        width, is_pct, pct_val, _ = _parse_width(col_inner)
-        if is_pct:
-            has_percentage = True
-        columns.append(ColumnDef(
-            width=width,
-            is_percentage=is_pct,
-            pct=pct_val,
-            double_divider_right=(divider_right == '#'),
-            panels=[Panel(name=None, row_count=None, row_count_is_pct=False,
-                          row_pct=None, heading=None, num_rows_def=0)],
-            partial_borders=[],
-        ))
-
-    cur_panel = [0] * n_cols   # current panel index per column
-    new_names = []
-
-    for lineno, inner in section_lines:
-        if _is_partial_border(inner):
-            pb_style = 'double' if inner.strip()[0] == '=' else 'single'
-            for i in range(n_cols):
-                # A column continues through this partial border if its known
-                # '{' position in the inner string still contains '{'.
-                pos = col_brace_pos[i] if i < len(col_brace_pos) else -1
-                col_continues = (0 <= pos < len(inner) and inner[pos] == '{')
-                if not col_continues:
-                    columns[i].partial_borders.append(PartialBorder(style=pb_style))
-                    columns[i].panels.append(Panel(
-                        name=None, row_count=None, row_count_is_pct=False,
-                        row_pct=None, heading=None, num_rows_def=0,
-                    ))
-                    cur_panel[i] = len(columns[i].panels) - 1
-            continue
-
-        # Normal column row
-        blocks = _parse_column_blocks(inner, lineno)
-        for i, (col_inner, _) in enumerate(blocks):
-            if i >= n_cols:
-                break
-            panel = columns[i].panels[cur_panel[i]]
-
-            if lineno == first_lineno:
-                _, _, _, col_content = _parse_width(col_inner)
-            else:
-                col_content = col_inner
-
-            # Row count
-            row_match = re.search(r'\b(\d+)(%?)R\b', col_content)
-            if row_match and panel.row_count is None:
-                count_val = int(row_match.group(1))
-                is_pct_r = row_match.group(2) == '%'
-                panel.row_count = count_val
-                panel.row_count_is_pct = is_pct_r
-                if is_pct_r:
-                    panel.row_pct = count_val
-                    has_percentage = True
-
-            # Region name
-            name_match = re.search(r'\$([a-z0-9_]+)\$', col_content)
-            if name_match:
-                region_name = name_match.group(1)
-                if not re.match(r'^[a-z0-9_]+$', region_name):
-                    from .exceptions import ShellSyntaxError
-                    raise ShellSyntaxError(f"invalid region name '{region_name}'",
-                                           line=lineno)
-                if region_name in seen_names or region_name in new_names:
-                    from .exceptions import ShellSyntaxError
-                    raise ShellSyntaxError(f"duplicate region name '{region_name}'",
-                                           line=lineno)
-                if panel.name is None:
-                    panel.name = region_name
-                    new_names.append(region_name)
-
-            # Heading
-            heading_match = re.search(r'__(.+?)__', col_content)
-            if heading_match and panel.heading is None:
-                panel.heading = heading_match.group(1)
-
-            panel.num_rows_def += 1
-
-    return VSplit(columns=columns), has_percentage, new_names
+    # 3. Leaf
+    return _parse_leaf(lines, seen_names)
 
 
 # ---------------------------------------------------------------------------
-# Low-level helpers
+# Split finders
 # ---------------------------------------------------------------------------
 
-def _get_brace_positions(inner: str) -> list:
-    """Return positions of each top-level '{' in a column row inner string."""
-    positions = []
-    pos = 0
-    n = len(inner)
-    while pos < n:
-        if inner[pos] in ('|', '#'):
-            pos += 1
-            continue
-        if inner[pos] == '{':
-            positions.append(pos)
-            depth = 0
-            while pos < n:
-                if inner[pos] == '{':
-                    depth += 1
-                elif inner[pos] == '}':
-                    depth -= 1
-                    if depth == 0:
-                        pos += 1
-                        break
-                pos += 1
+def _find_full_hsplit(lines):
+    """Return index of first full border row (starts with =/-  and has no '{'), or None."""
+    for i, (_, inner) in enumerate(lines):
+        s = inner.strip()
+        if s and s[0] in ('=', '-') and '{' not in inner:
+            return i
+    return None
+
+
+def _find_full_vsplit(lines):
+    """
+    Return the divider char ('|' or '#') if ALL column rows (rows containing
+    '{') have an outer divider (a '|' or '#' that lies outside any '{…}'
+    block) as their first such character, and all agree on the same char.
+    Returns None if no consistent structural vertical split exists.
+    """
+    col_rows = [inner for (_, inner) in lines if '{' in inner]
+    if not col_rows:
+        return None
+
+    div_char = None
+    for inner in col_rows:
+        p, ch = _first_outer_divider(inner)
+        if p is None:
+            return None       # this row has no outer divider → can't split
+        if div_char is None:
+            div_char = ch
+        elif ch != div_char:
+            return None       # inconsistent divider chars
+    return div_char           # just the char; splitting is done structurally
+
+
+def _first_outer_divider(inner):
+    """
+    Return (pos, char) of the first '|' or '#' that lies outside all
+    '{…}' blocks in *inner*, or (None, None) if none exists.
+    """
+    depth = 0
+    for p, ch in enumerate(inner):
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+        elif ch in ('|', '#') and depth == 0:
+            return p, ch
+    return None, None
+
+
+def _split_vertical(lines, div_char):
+    """
+    Split each (lineno, inner) at its first outer divider structurally,
+    i.e. at the first '|'/'#' outside '{…}' blocks.
+    Lines with no outer divider are split at position 0 (empty left side).
+    """
+    left = []
+    right = []
+    for ln, inner in lines:
+        p, _ = _first_outer_divider(inner)
+        if p is not None:
+            left.append((ln, inner[:p]))
+            right.append((ln, inner[p + 1:]))
         else:
-            pos += 1
-    return positions
+            # No divider (shouldn't happen if _find_full_vsplit passed)
+            left.append((ln, inner))
+            right.append((ln, ''))
+    return left, right
 
 
-def _parse_column_blocks(inner: str, lineno: int) -> list:
-    """Parse column row inner string into list of (col_content, divider_right)."""
-    result = []
-    pos = 0
-    n = len(inner)
+# ---------------------------------------------------------------------------
+# Leaf parser
+# ---------------------------------------------------------------------------
 
-    while pos < n:
-        if inner[pos] in ('|', '#'):
-            pos += 1
-        if pos >= n:
-            break
-        if inner[pos] != '{':
-            pos += 1
-            continue
+def _parse_leaf(lines, seen_names):
+    """Parse a single-column block (no splits found) into a Panel."""
+    name = None
+    heading = None
+    width = None
+    is_pct = False
+    pct = None
+    row_count = None
+    row_count_is_pct = False
+    row_pct = None
+    num_rows_def = 0
+    first_content = True
 
-        depth = 0
-        start = pos
-        while pos < n:
-            if inner[pos] == '{':
-                depth += 1
-            elif inner[pos] == '}':
-                depth -= 1
-                if depth == 0:
-                    break
-            pos += 1
+    for lineno, inner in lines:
+        content = _extract_block_content(inner)
+        if content is None:
+            continue  # not a {…} block (border line that ended up here)
 
-        if depth != 0:
-            from .exceptions import ShellSyntaxError
-            raise ShellSyntaxError("unclosed column block '{'", line=lineno)
+        num_rows_def += 1
 
-        col_content = inner[start + 1:pos]
-        pos += 1  # skip '}'
+        if first_content:
+            # Width spec comes from the first content row only
+            width, is_pct, pct, content = _parse_width(content)
+            first_content = False
 
-        divider_right = None
-        if pos < n and inner[pos] in ('|', '#'):
-            divider_right = inner[pos]
+        # Row count: NR or N%R
+        row_match = re.search(r'\b(\d+)(%?)R\b', content)
+        if row_match and row_count is None:
+            count_val = int(row_match.group(1))
+            is_pct_r = row_match.group(2) == '%'
+            row_count = count_val
+            row_count_is_pct = is_pct_r
+            if is_pct_r:
+                row_pct = float(count_val)
 
-        result.append((col_content, divider_right))
+        # Region name: $name$
+        name_match = re.search(r'\$([a-z0-9_]+)\$', content)
+        if name_match:
+            region_name = name_match.group(1)
+            if not re.match(r'^[a-z0-9_]+$', region_name):
+                raise ShellSyntaxError(
+                    f"invalid region name '{region_name}'", line=lineno)
+            if region_name in seen_names:
+                raise ShellSyntaxError(
+                    f"duplicate region name '{region_name}'", line=lineno)
+            if name is None:
+                name = region_name
+                seen_names.add(region_name)
 
-    return result
+        # Heading: __text__
+        heading_match = re.search(r'__(.+?)__', content)
+        if heading_match and heading is None:
+            heading = heading_match.group(1)
+
+    return Panel(
+        name=name, heading=heading,
+        width=width, is_pct=is_pct, pct=pct,
+        row_count=row_count, row_count_is_pct=row_count_is_pct, row_pct=row_pct,
+        num_rows_def=num_rows_def,
+    )
 
 
-def _parse_border_row(inner: str, lineno: int):
-    """Parse a full border row inner string. Returns (style, title)."""
+def _extract_block_content(inner):
+    """
+    Return the content inside a '{content}' block, or None if the line
+    doesn't look like a block (e.g. it's a stray border line).
+    """
+    s = inner.strip()
+    if s.startswith('{') and s.endswith('}'):
+        return s[1:-1]
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Border parsing
+# ---------------------------------------------------------------------------
+
+def _parse_border(inner):
+    """Parse a full border inner string into a BorderRow."""
     stripped = inner.strip()
     fill_char = '=' if stripped[0] == '=' else '-'
     style = 'double' if fill_char == '=' else 'single'
     content = stripped.strip(fill_char).strip()
     content = re.sub(r'^\d+%', '', content).strip(fill_char).strip()
+    # Strip stray structural chars that sometimes appear in border lines
+    content = content.strip('}|').strip()
     title = content if content else None
-    return style, title
+    return BorderRow(style=style, title=title)
 
 
-def _parse_width(col_content: str):
+# ---------------------------------------------------------------------------
+# Width spec parsing
+# ---------------------------------------------------------------------------
+
+def _parse_width(col_content):
     """
-    Extract width spec from start of column content.
+    Extract a width specification from the start of column content.
     Returns (width_chars, is_percentage, pct_val, remaining_content).
     """
     pct_match = re.match(r'^(\d+)%', col_content)
@@ -288,6 +252,18 @@ def _parse_width(col_content: str):
     return None, False, None, col_content
 
 
-def _syntax_error(message, lineno=None):
-    from .exceptions import ShellSyntaxError
-    return ShellSyntaxError(message, line=lineno)
+# ---------------------------------------------------------------------------
+# has_percentage helper
+# ---------------------------------------------------------------------------
+
+def _contains_pct(node):
+    """Return True if any Panel in the tree uses a percentage width or height."""
+    if node is None:
+        return False
+    if isinstance(node, Panel):
+        return node.is_pct or node.row_count_is_pct
+    if isinstance(node, HSplit):
+        return _contains_pct(node.top) or _contains_pct(node.bottom)
+    if isinstance(node, VSplit):
+        return _contains_pct(node.left) or _contains_pct(node.right)
+    return False
