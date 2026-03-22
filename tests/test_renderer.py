@@ -129,6 +129,61 @@ class TestRendererFullRender:
         assert '─' in out or '├' in out or '┤' in out
 
 
+class TestRendererFullRenderOffset:
+    """full_render() with non-zero offset_row / offset_col (modal rendering)."""
+
+    def test_offset_render_does_not_emit_clear(self, capsys):
+        term = MockTerminal(width=40, height=10)
+        renderer = Renderer(term)
+        model = Parser().parse("|=====|\n|{4R $r$ }|\n|=====|\n")
+        regions = {r.name: r for r in model.resolve(20, 6, offset_row=5, offset_col=10)}
+        renderer.full_render(model, regions, {}, None, 20, 6,
+                             offset_row=5, offset_col=10)
+        out = capsys.readouterr().out
+        # term.clear (MockTerminal returns '\x1b[2J'-style) must not appear
+        assert '\x1b[2J' not in out
+
+    def test_zero_offset_still_emits_clear(self, capsys):
+        term = MockTerminal(width=40, height=10)
+        renderer = Renderer(term)
+        model = Parser().parse("|=====|\n|{4R $r$ }|\n|=====|\n")
+        regions = {r.name: r for r in model.resolve(40, 10)}
+        renderer.full_render(model, regions, {}, None, 40, 10)
+        out = capsys.readouterr().out
+        assert '\x1b[2J' in out
+
+    def test_offset_render_places_border_at_correct_col(self, capsys):
+        term = MockTerminal(width=40, height=10)
+        renderer = Renderer(term)
+        model = Parser().parse("|=====|\n|{4R $r$ }|\n|=====|\n")
+        regions = {r.name: r for r in model.resolve(20, 6, offset_row=2, offset_col=10)}
+        renderer.full_render(model, regions, {}, None, 20, 6,
+                             offset_row=2, offset_col=10)
+        out = capsys.readouterr().out
+        # The outer left wall should appear at col 10 — move(2, 10) in output
+        assert '2' in out and '10' in out
+
+    def test_offset_region_content_at_correct_position(self):
+        model = Parser().parse("|=====|\n|{4R $r$ }|\n|=====|\n")
+        regions = model.resolve(20, 6, offset_row=5, offset_col=10)
+        r = next(reg for reg in regions if reg.name == 'r')
+        # Region col should be offset_col + 1 (one inside the left border wall)
+        assert r.col == 11
+        assert r.row == 6   # offset_row(5) + 1 border row
+
+    def test_offset_does_not_blank_rows_outside_modal(self, capsys):
+        """Rows outside the modal bounding box must not be written."""
+        term = MockTerminal(width=80, height=24)
+        renderer = Renderer(term)
+        model = Parser().parse("|=====|\n|{4R $r$ }|\n|=====|\n")
+        regions = {r.name: r for r in model.resolve(20, 6, offset_row=5, offset_col=10)}
+        renderer.full_render(model, regions, {}, None, 20, 6,
+                             offset_row=5, offset_col=10)
+        out = capsys.readouterr().out
+        # Rows 0-4 are outside the modal; move(0,...) must not appear
+        assert 'move(0,' not in out and 'move(1,' not in out
+
+
 class TestMockTerminal:
     def test_width_height(self):
         term = MockTerminal(width=100, height=30)

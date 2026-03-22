@@ -57,12 +57,21 @@ class LayoutModel:
     root: object        # LayoutNode | None
     has_percentage: bool
 
-    def resolve(self, term_width: int, term_height: int) -> list:
-        """Return a flat list of Region objects with absolute coordinates."""
+    def resolve(self, term_width: int, term_height: int,
+                offset_row: int = 0, offset_col: int = 0) -> list:
+        """Return a flat list of Region objects with absolute coordinates.
+
+        offset_row / offset_col shift the origin so that modal shells
+        (which render at an arbitrary screen position) produce regions
+        with the correct absolute terminal coordinates from the start.
+        """
         if self.root is None:
             return []
-        # Content area: col 1..(term_width-2), row 0..(term_height-1)
-        return _resolve_node(self.root, 0, 1, term_width - 2, term_height,
+        # Content area starts one column inside the left border wall.
+        return _resolve_node(self.root,
+                             offset_row,
+                             offset_col + 1,
+                             term_width - 2, term_height,
                              pct_base=None)
 
 

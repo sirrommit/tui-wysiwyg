@@ -28,10 +28,11 @@ class Shell:
         self._renderer = None
         self._resolve_layout()
 
-    def _resolve_layout(self):
-        w = self._term.width or 80
-        h = self._term.height or 24
-        regions = self._layout.resolve(w, h)
+    def _resolve_layout(self, width=None, height=None,
+                        offset_row: int = 0, offset_col: int = 0):
+        w = width  if width  is not None else (self._term.width  or 80)
+        h = height if height is not None else (self._term.height or 24)
+        regions = self._layout.resolve(w, h, offset_row=offset_row, offset_col=offset_col)
         self._regions = {r.name: r for r in regions}
         # Focus order: reading order (top-to-bottom, left-to-right)
         self._focus_order = [r.name for r in sorted(regions, key=lambda r: (r.row, r.col))]
@@ -229,3 +230,91 @@ class Shell:
                 sys.stdout.flush()
 
         return None
+
+    def run_modal(self, row: int, col: int, width: int, height: int,
+                  parent_shell=None):
+        """Run this Shell as a modal popup overlaid at (row, col, width, height).
+
+        Must be called while a parent Shell is already running (i.e. the
+        terminal is already in fullscreen/cbreak/hidden_cursor context — for
+        example, from inside a MenuFunction callback).  Does NOT re-enter those
+        context managers.
+
+        parent_shell — if provided, its display is fully restored when the
+                       modal exits.
+
+        Returns the modal's exit value (same semantics as run()).
+        Escape or Ctrl+Q dismiss the modal and return None.
+        """
+        self._resolve_layout(width=width, height=height,
+                             offset_row=row, offset_col=col)
+
+        renderer = Renderer(self._term)
+        self._renderer = renderer
+        event_loop = EventLoop(self._term)
+        term = self._term
+
+        for name in self._focus_order:
+            if name in self._interactions and self._interactions[name].is_focusable:
+                self._focused = name
+                break
+
+        renderer.full_render(self._layout, self._regions, self._interactions,
+                             self._focused, width, height,
+                             offset_row=row, offset_col=col)
+        sys.stdout.flush()
+
+        result = None
+        while True:
+            key = event_loop.next_key()
+            if key is None or not key:
+                continue
+
+            key_str = str(key)
+
+            if key_str in (chr(27), chr(17)):   # Escape or Ctrl+Q → dismiss
+                break
+
+            if key.is_sequence and key.name == 'KEY_BTAB':
+                self._move_focus(-1)
+            elif key_str == '\t':
+                self._move_focus(1)
+            elif self._focused and self._focused in self._interactions:
+                interaction = self._interactions[self._focused]
+                changed, value = interaction.handle_key(key)
+                self._dirty.add(self._focused)
+                if changed:
+                    self._observer.notify(self._focused, value)
+                should_exit, rv = interaction.signal_return()
+                if should_exit:
+                    result = rv
+                    break
+
+            if key.is_sequence and getattr(key, 'name', None) == 'KEY_RESIZE':
+                self._resolve_layout(width=width, height=height,
+                                     offset_row=row, offset_col=col)
+                renderer.full_render(self._layout, self._regions, self._interactions,
+                                     self._focused, width, height,
+                                     offset_row=row, offset_col=col)
+                sys.stdout.flush()
+                continue
+
+            for dirty_name in list(self._dirty):
+                if dirty_name in self._interactions and dirty_name in self._regions:
+                    region = self._regions[dirty_name]
+                    interaction = self._interactions[dirty_name]
+                    renderer.render_region(region, interaction, term,
+                                           dirty_name == self._focused)
+            self._dirty.clear()
+            sys.stdout.flush()
+
+        # Restore parent display so the popup area doesn't leave a ghost.
+        if parent_shell is not None and parent_shell._renderer is not None:
+            tw = term.width or 80
+            th = term.height or 24
+            parent_shell._renderer.full_render(
+                parent_shell._layout, parent_shell._regions,
+                parent_shell._interactions, parent_shell._focused, tw, th)
+            sys.stdout.flush()
+
+        return result
