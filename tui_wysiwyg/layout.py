@@ -57,12 +57,21 @@ class LayoutModel:
     root: object        # LayoutNode | None
     has_percentage: bool
 
-    def resolve(self, term_width: int, term_height: int) -> list:
-        """Return a flat list of Region objects with absolute coordinates."""
+    def resolve(self, term_width: int, term_height: int,
+                offset_row: int = 0, offset_col: int = 0) -> list:
+        """Return a flat list of Region objects with absolute coordinates.
+
+        offset_row / offset_col shift the origin so that modal shells
+        (which render at an arbitrary screen position) produce regions
+        with the correct absolute terminal coordinates from the start.
+        """
         if self.root is None:
             return []
-        # Content area: col 1..(term_width-2), row 0..(term_height-1)
-        return _resolve_node(self.root, 0, 1, term_width - 2, term_height,
+        # Content area starts one column inside the left border wall.
+        return _resolve_node(self.root,
+                             offset_row,
+                             offset_col + 1,
+                             term_width - 2, term_height,
                              pct_base=None)
 
 
@@ -96,7 +105,7 @@ def _resolve_node(node, row: int, col: int, width: int, height: int,
             # Subtract one divider per internal column boundary
             pct_base = width - (num_cols - 1)
 
-        left_width = _declared_width(node.left, width - 1, pct_base)
+        left_width = _vsplit_left_width(node, width, pct_base)
         right_width = width - left_width - 1
 
         regions = _resolve_node(node.left, row, col,
@@ -188,6 +197,111 @@ def _declared_height(node, available: int) -> int:
         return top_h + border_h + bot_h
 
     return 0
+
+
+def _fixed_width(node) -> int | None:
+    """
+    Return the node's exact content width if every column uses a fixed character
+    count (no percentages, no fill).  Returns None if any dimension is variable.
+
+    Does NOT include the two outer border-wall columns — add 2 for terminal width.
+    """
+    if node is None:
+        return 0
+
+    if isinstance(node, Panel):
+        if node.width is not None and not node.is_pct:
+            return node.width
+        return None   # fill or percentage
+
+    if isinstance(node, VSplit):
+        lw = _fixed_width(node.left)
+        rw = _fixed_width(node.right)
+        if lw is None or rw is None:
+            return None
+        return lw + 1 + rw   # left content + divider + right content
+
+    if isinstance(node, HSplit):
+        child = node.top if node.top is not None else node.bottom
+        return _fixed_width(child)
+
+    return None
+
+
+def _fixed_height(node) -> int | None:
+    """
+    Return the node's exact height in rows if every row-bearing panel carries an
+    explicit nR declaration (no fill, no percentage rows).  Returns None otherwise.
+
+    Border rows are always 1 row each and are always counted.
+    """
+    if node is None:
+        return 0
+
+    if isinstance(node, Panel):
+        if node.row_count is not None and not node.row_count_is_pct:
+            return node.row_count
+        return None   # fill (num_rows_def) or percentage
+
+    if isinstance(node, VSplit):
+        lh = _fixed_height(node.left)
+        rh = _fixed_height(node.right)
+        if lh is None or rh is None:
+            return None
+        return max(lh, rh)
+
+    if isinstance(node, HSplit):
+        top_h = 0
+        if node.top is not None:
+            top_h = _fixed_height(node.top)
+            if top_h is None:
+                return None
+        bot_h = 0
+        if node.bottom is not None:
+            bot_h = _fixed_height(node.bottom)
+            if bot_h is None:
+                return None
+        border_h = 1 if node.border is not None else 0
+        return top_h + border_h + bot_h
+
+    return None
+
+
+def _vsplit_left_width(node: "VSplit", width: int, pct_base: int) -> int:
+    """Return the left-panel width for a VSplit given *width* available chars.
+
+    If the left side is fill and the right side has an explicit fixed/pct
+    declaration, the right side gets its declared width and the left side
+    fills the remainder.  Otherwise the left side is allocated first and the
+    right side takes what is left.
+
+    ``pct_base`` must already be computed before calling this helper.
+    """
+    if _is_fill_node(node.left) and not _is_fill_node(node.right):
+        right_w = min(_declared_width(node.right, width - 1, pct_base), width - 1)
+        return width - right_w - 1
+    return _declared_width(node.left, width - 1, pct_base)
+
+
+def _is_fill_node(node) -> bool:
+    """Return True if *node* has no explicit fixed-char or percentage width.
+
+    A fill node takes whatever space is left after fixed/pct siblings are
+    allocated.  Used by VSplit resolution to decide which side to allocate
+    first when one side is fill and the other is fixed.
+    """
+    if node is None:
+        return True
+    if isinstance(node, Panel):
+        return node.width is None and not node.is_pct
+    if isinstance(node, HSplit):
+        child = node.top if node.top is not None else node.bottom
+        return _is_fill_node(child)
+    if isinstance(node, VSplit):
+        # A VSplit consumes all available width; treat it as non-fill so that
+        # a sibling fixed panel still gets its declared width.
+        return False
+    return True
 
 
 def _num_vsplit_cols(node) -> int:

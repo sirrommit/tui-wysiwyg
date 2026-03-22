@@ -189,19 +189,73 @@ This keeps the model single-threaded and avoids terminal state complexity.
 
 ---
 
+## Modal Popup Shells
+
+A modal shell is a second `Shell` instance that renders as a popup overlay at a fixed position on top of a running parent shell.
+
+### Design constraint
+
+`MenuFunction` callbacks fire synchronously *inside* `Shell.run()`, while the parent's terminal context (alternate screen, cbreak mode, hidden cursor) is already active. The modal must **not** re-enter those context managers — doing so would restore the terminal to normal mode and then re-enter, flickering and losing state.
+
+### How it works
+
+1. **`Shell.run_modal(row, col, width, height, parent_shell=None)`** resolves the modal's layout with absolute offsets:
+
+   ```python
+   self._resolve_layout(width=width, height=height, offset_row=row, offset_col=col)
+   ```
+
+   `LayoutModel.resolve(width, height, offset_row=row, offset_col=col)` passes the offsets through to `_resolve_node`, which already accepts arbitrary `row`/`col`. All `Region` objects emerge with correct absolute terminal coordinates — no translation needed later.
+
+2. **`Renderer.full_render(…, offset_row=row, offset_col=col)`** draws only within the popup bounding box:
+   - `term.clear` is **not** called (it would erase the parent shell).
+   - Pass 1: outer `│` walls are drawn at `offset_col` and `offset_col + width − 1` for `height` rows only.
+   - Pass 2: `_render_structure` starts at `(row=offset_row, col=offset_col + 1)`.
+   - Pass 3: content regions use their pre-computed absolute coordinates unchanged.
+
+3. The modal runs its **own event loop** (same structure as `run()`) reading keys from the same terminal. Escape or Ctrl+Q break the loop and return `None`.
+
+4. On exit, if `parent_shell` is provided, `parent_shell._renderer.full_render(…)` is called at `(0, 0)` — a normal full-screen render that overwrites the popup area and restores the parent display.
+
+### Key insight: `is_full_screen` flag
+
+```python
+is_full_screen = (offset_row == 0 and offset_col == 0)
+if is_full_screen:
+    print(term.clear, ...)
+```
+
+This single flag gates all behavior that must differ between a full-screen render and a modal render (clearing, blanking rows below the layout, etc.). All existing call sites pass `offset_row=0, offset_col=0` and are unaffected.
+
+### Typical call site
+
+```python
+def confirm_delete(sh):
+    popup = Shell(CONFIRM_POPUP, _terminal=sh.terminal)
+    popup.assign("msg",    ListView(["Delete item?", ""], bullet=" "))
+    popup.assign("choice", MenuReturn({"Yes": True, "No": False}))
+    # height auto-detected as 7 (all panels use explicit 2R);
+    # row/col auto-centered; only width needs to be explicit (fill panels).
+    return popup.run_modal(width=30, parent_shell=sh)
+```
+
+`run_modal()` must be called from inside a `MenuFunction` callback (while `Shell.run()` is executing) so the terminal context is already active.
+
+---
+
 ## Package Structure
 
 ```
 tui-wysiwyg/
 ├── pyproject.toml
 ├── README.md
-├── OVERVIEW.md
-├── ARCHITECTURE.md
-├── SHELL_SYNTAX.md
-├── INTERACTIONS.md
-├── API.md
-├── INTER_REGION.md
-├── TESTING.md
+├── docs/
+│   ├── index.md
+│   ├── overview.md
+│   ├── architecture.md
+│   ├── shell-syntax.md
+│   ├── interactions/
+│   └── widgets/
 ├── example.shell
 ├── tests/
 │   ├── conftest.py        # MockTerminal fixture

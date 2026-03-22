@@ -1,6 +1,7 @@
 import sys
 from .layout import (LayoutModel, Region, BorderRow, HSplit, VSplit, Panel,
-                     _declared_width, _declared_height, _num_vsplit_cols)
+                     _declared_width, _declared_height, _num_vsplit_cols,
+                     _vsplit_left_width)
 from .style import render_styled, styled_plain_text
 
 # ---------------------------------------------------------------------------
@@ -61,7 +62,7 @@ def _bottom_face_dividers(node, col: int, width: int, pct_base) -> dict:
     if isinstance(node, VSplit):
         if pct_base is None:
             pct_base = width - (_num_vsplit_cols(node) - 1)
-        left_width = _declared_width(node.left, width - 1, pct_base)
+        left_width = _vsplit_left_width(node, width, pct_base)
         div_col = col + left_width
         result = {div_col: node.divider}
         result.update(_bottom_face_dividers(node.left, col, left_width, pct_base))
@@ -84,7 +85,7 @@ def _top_face_dividers(node, col: int, width: int, pct_base) -> dict:
     if isinstance(node, VSplit):
         if pct_base is None:
             pct_base = width - (_num_vsplit_cols(node) - 1)
-        left_width = _declared_width(node.left, width - 1, pct_base)
+        left_width = _vsplit_left_width(node, width, pct_base)
         div_col = col + left_width
         result = {div_col: node.divider}
         result.update(_top_face_dividers(node.left, col, left_width, pct_base))
@@ -106,14 +107,19 @@ class Renderer:
         self._term = term
 
     def full_render(self, layout_model, regions, interactions,
-                    focused_name, term_width, term_height):
+                    focused_name, term_width, term_height,
+                    offset_row: int = 0, offset_col: int = 0):
         term = self._term
-        print(term.clear, end='', flush=False)
+        is_full_screen = (offset_row == 0 and offset_col == 0)
 
-        # Pass 1: write rows with outer border walls up to the layout's actual
-        # height; write blank rows below. This clears any content left over from
-        # a previous taller layout without extending the outer border walls into
-        # empty screen space below the current UI.
+        # Full-screen renders clear the entire terminal first; modal renders
+        # must not disturb the parent content outside their bounding box.
+        if is_full_screen:
+            print(term.clear, end='', flush=False)
+
+        # Pass 1: outer border walls up to the layout's actual height.
+        # Full-screen: also write blank rows below the layout to clear stale content.
+        # Modal: only write the popup rows — leave the rest of the screen alone.
         layout_height = (
             _declared_height(layout_model.root, term_height)
             if layout_model.root is not None else 0
@@ -121,16 +127,19 @@ class Renderer:
         blank_inner = ' ' * (term_width - 2)
         blank_full  = ' ' * term_width
         for r in range(term_height):
+            abs_row = offset_row + r
             if r < layout_height:
-                print(term.move(r, 0) + '│' + blank_inner + '│', end='', flush=False)
-            else:
-                print(term.move(r, 0) + blank_full, end='', flush=False)
+                print(term.move(abs_row, offset_col) + '│' + blank_inner + '│',
+                      end='', flush=False)
+            elif is_full_screen:
+                print(term.move(abs_row, offset_col) + blank_full, end='', flush=False)
 
         # Pass 2: recursive structure (internal dividers + borders)
         if layout_model.root is not None:
             self._render_structure(
                 layout_model.root,
-                row=0, col=1, width=term_width - 2, height=term_height,
+                row=offset_row, col=offset_col + 1,
+                width=term_width - 2, height=term_height,
                 pct_base=None,
                 left_div='single',
                 right_div='single',
@@ -138,6 +147,7 @@ class Renderer:
             )
 
         # Pass 3: content regions
+        # Regions already carry absolute coordinates (resolve() was called with offsets).
         for name, region in regions.items():
             interaction = interactions.get(name)
             focused = (name == focused_name)
@@ -166,7 +176,7 @@ class Renderer:
         if isinstance(node, VSplit):
             if pct_base is None:
                 pct_base = width - (_num_vsplit_cols(node) - 1)
-            left_width = _declared_width(node.left, width - 1, pct_base)
+            left_width = _vsplit_left_width(node, width, pct_base)
             div_col = col + left_width
             div_char = '║' if node.divider == 'double' else '│'
             for r in range(height):
