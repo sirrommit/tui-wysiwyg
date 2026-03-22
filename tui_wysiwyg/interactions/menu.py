@@ -1,7 +1,7 @@
-from .base import Interaction
+from .scrollable import _ScrollableList
 
 
-class MenuFunction(Interaction):
+class MenuFunction(_ScrollableList):
     """Menu where each item calls a function when selected."""
 
     def __init__(self, items: dict):
@@ -11,51 +11,36 @@ class MenuFunction(Interaction):
         self._items = items
         self._labels = list(items.keys())
         self._active_index = 0
+        self._scroll_offset = 0
         self._last_activated = None
         self._shell = None
 
     def render(self, region, term, focused: bool = False) -> None:
-        for i, label in enumerate(self._labels):
-            row = region.row + i
-            if row >= region.row + region.height:
-                break
-            col = region.col
-
-            line = label[:region.width].ljust(region.width)
-
-            if i == self._active_index and focused:
-                try:
-                    text = term.reverse + line + term.normal
-                except Exception:
-                    text = f'> {label}'[:region.width].ljust(region.width)
-            elif i == self._active_index:
-                text = f'> {label}'[:region.width].ljust(region.width)
-            else:
-                text = line
-
-            print(term.move(row, col) + text, end='', flush=False)
-
-        # Clear remaining lines
-        for i in range(len(self._labels), region.height):
-            row = region.row + i
-            print(term.move(row, region.col) + ' ' * region.width, end='', flush=False)
+        viewport = self._labels[
+            self._scroll_offset: self._scroll_offset + region.height
+        ]
+        self._render_rows(viewport, region, term, focused)
 
     def handle_key(self, key) -> tuple:
         if key.is_sequence:
             name = key.name
             if name in ('KEY_UP', 'KEY_SUP') or str(key) == 'k':
                 self._active_index = max(0, self._active_index - 1)
+                self._clamp_scroll()
                 return True, self.get_value()
             elif name in ('KEY_DOWN', 'KEY_SDOWN') or str(key) == 'j':
                 self._active_index = min(len(self._labels) - 1, self._active_index + 1)
+                self._clamp_scroll()
                 return True, self.get_value()
             elif name == 'KEY_ENTER':
                 return self._activate()
         elif str(key) == 'k':
             self._active_index = max(0, self._active_index - 1)
+            self._clamp_scroll()
             return True, self.get_value()
         elif str(key) == 'j':
             self._active_index = min(len(self._labels) - 1, self._active_index + 1)
+            self._clamp_scroll()
             return True, self.get_value()
         elif str(key) == '\n' or str(key) == '\r':
             return self._activate()
@@ -79,10 +64,11 @@ class MenuFunction(Interaction):
     def set_value(self, value) -> None:
         if value is not None and value in self._labels:
             self._active_index = self._labels.index(value)
+            self._clamp_scroll()
         self._last_activated = value
 
 
-class MenuReturn(Interaction):
+class MenuReturn(_ScrollableList):
     """Menu where each item returns a value when selected."""
 
     def __init__(self, items: dict):
@@ -92,34 +78,15 @@ class MenuReturn(Interaction):
         self._items = items
         self._labels = list(items.keys())
         self._active_index = 0
+        self._scroll_offset = 0
         self._wants_exit = False
         self._exit_value = None
 
     def render(self, region, term, focused: bool = False) -> None:
-        for i, label in enumerate(self._labels):
-            row = region.row + i
-            if row >= region.row + region.height:
-                break
-            col = region.col
-
-            line = label[:region.width].ljust(region.width)
-
-            if i == self._active_index and focused:
-                try:
-                    text = term.reverse + line + term.normal
-                except Exception:
-                    text = f'> {label}'[:region.width].ljust(region.width)
-            elif i == self._active_index:
-                text = f'> {label}'[:region.width].ljust(region.width)
-            else:
-                text = line
-
-            print(term.move(row, col) + text, end='', flush=False)
-
-        # Clear remaining lines
-        for i in range(len(self._labels), region.height):
-            row = region.row + i
-            print(term.move(row, region.col) + ' ' * region.width, end='', flush=False)
+        viewport = self._labels[
+            self._scroll_offset: self._scroll_offset + region.height
+        ]
+        self._render_rows(viewport, region, term, focused)
 
     def handle_key(self, key) -> tuple:
         self._wants_exit = False
@@ -127,17 +94,21 @@ class MenuReturn(Interaction):
             name = key.name
             if name in ('KEY_UP',):
                 self._active_index = max(0, self._active_index - 1)
+                self._clamp_scroll()
                 return True, self.get_value()
             elif name in ('KEY_DOWN',):
                 self._active_index = min(len(self._labels) - 1, self._active_index + 1)
+                self._clamp_scroll()
                 return True, self.get_value()
             elif name == 'KEY_ENTER':
                 return self._select()
         elif str(key) == 'k':
             self._active_index = max(0, self._active_index - 1)
+            self._clamp_scroll()
             return True, self.get_value()
         elif str(key) == 'j':
             self._active_index = min(len(self._labels) - 1, self._active_index + 1)
+            self._clamp_scroll()
             return True, self.get_value()
         elif str(key) == '\n' or str(key) == '\r':
             return self._select()
@@ -159,6 +130,7 @@ class MenuReturn(Interaction):
     def set_value(self, value) -> None:
         if value in self._labels:
             self._active_index = self._labels.index(value)
+            self._clamp_scroll()
 
     def signal_return(self) -> tuple:
         if self._wants_exit:
@@ -166,7 +138,7 @@ class MenuReturn(Interaction):
         return False, None
 
 
-class MenuHybrid(Interaction):
+class MenuHybrid(_ScrollableList):
     """Menu where items can be callables or return values."""
 
     def __init__(self, items: dict):
@@ -176,36 +148,17 @@ class MenuHybrid(Interaction):
         self._items = items
         self._labels = list(items.keys())
         self._active_index = 0
+        self._scroll_offset = 0
         self._wants_exit = False
         self._exit_value = None
         self._last_activated = None
         self._shell = None
 
     def render(self, region, term, focused: bool = False) -> None:
-        for i, label in enumerate(self._labels):
-            row = region.row + i
-            if row >= region.row + region.height:
-                break
-            col = region.col
-
-            line = label[:region.width].ljust(region.width)
-
-            if i == self._active_index and focused:
-                try:
-                    text = term.reverse + line + term.normal
-                except Exception:
-                    text = f'> {label}'[:region.width].ljust(region.width)
-            elif i == self._active_index:
-                text = f'> {label}'[:region.width].ljust(region.width)
-            else:
-                text = line
-
-            print(term.move(row, col) + text, end='', flush=False)
-
-        # Clear remaining lines
-        for i in range(len(self._labels), region.height):
-            row = region.row + i
-            print(term.move(row, region.col) + ' ' * region.width, end='', flush=False)
+        viewport = self._labels[
+            self._scroll_offset: self._scroll_offset + region.height
+        ]
+        self._render_rows(viewport, region, term, focused)
 
     def handle_key(self, key) -> tuple:
         self._wants_exit = False
@@ -213,17 +166,21 @@ class MenuHybrid(Interaction):
             name = key.name
             if name in ('KEY_UP',):
                 self._active_index = max(0, self._active_index - 1)
+                self._clamp_scroll()
                 return True, self.get_value()
             elif name in ('KEY_DOWN',):
                 self._active_index = min(len(self._labels) - 1, self._active_index + 1)
+                self._clamp_scroll()
                 return True, self.get_value()
             elif name == 'KEY_ENTER':
                 return self._activate()
         elif str(key) == 'k':
             self._active_index = max(0, self._active_index - 1)
+            self._clamp_scroll()
             return True, self.get_value()
         elif str(key) == 'j':
             self._active_index = min(len(self._labels) - 1, self._active_index + 1)
+            self._clamp_scroll()
             return True, self.get_value()
         elif str(key) == '\n' or str(key) == '\r':
             return self._activate()
@@ -252,6 +209,7 @@ class MenuHybrid(Interaction):
     def set_value(self, value) -> None:
         if value in self._labels:
             self._active_index = self._labels.index(value)
+            self._clamp_scroll()
         self._last_activated = value
 
     def signal_return(self) -> tuple:

@@ -1,8 +1,8 @@
 from typing import Literal
-from .base import Interaction
+from .scrollable import _ScrollableList
 
 
-class CheckBox(Interaction):
+class CheckBox(_ScrollableList):
     """A checkbox list with multi or single selection modes."""
 
     def __init__(self, items: dict, mode: Literal["multi", "single"] = "multi"):
@@ -14,46 +14,31 @@ class CheckBox(Interaction):
         self._labels = list(items.keys())
         self._mode = mode
         self._active_index = 0
+        self._scroll_offset = 0
 
     def render(self, region, term, focused: bool = False) -> None:
-        for i, label in enumerate(self._labels):
-            row = region.row + i
-            if row >= region.row + region.height:
-                break
-            col = region.col
+        all_lines = []
+        for label in self._labels:
             checked = self._items[label]
-
             if self._mode == 'multi':
                 prefix = '[X]' if checked else '[ ]'
             else:
                 prefix = '(●)' if checked else '( )'
+            all_lines.append(f'{prefix} {label}')
 
-            line = f'{prefix} {label}'
-            display = line[:region.width].ljust(region.width)
-
-            if i == self._active_index and focused:
-                try:
-                    text = term.reverse + display + term.normal
-                except Exception:
-                    text = f'> {display}'
-            else:
-                text = display
-
-            print(term.move(row, col) + text, end='', flush=False)
-
-        # Clear remaining lines
-        for i in range(len(self._labels), region.height):
-            row = region.row + i
-            print(term.move(row, region.col) + ' ' * region.width, end='', flush=False)
+        viewport = all_lines[self._scroll_offset: self._scroll_offset + region.height]
+        self._render_rows(viewport, region, term, focused, active_marker=False)
 
     def handle_key(self, key) -> tuple:
         if key.is_sequence:
             name = key.name
             if name == 'KEY_UP':
                 self._active_index = max(0, self._active_index - 1)
+                self._clamp_scroll()
                 return False, self.get_value()
             elif name == 'KEY_DOWN':
                 self._active_index = min(len(self._labels) - 1, self._active_index + 1)
+                self._clamp_scroll()
                 return False, self.get_value()
             elif name in ('KEY_ENTER',):
                 return self._toggle()
@@ -61,9 +46,11 @@ class CheckBox(Interaction):
             char = str(key)
             if char == 'k':
                 self._active_index = max(0, self._active_index - 1)
+                self._clamp_scroll()
                 return False, self.get_value()
             elif char == 'j':
                 self._active_index = min(len(self._labels) - 1, self._active_index + 1)
+                self._clamp_scroll()
                 return False, self.get_value()
             elif char == ' ':
                 return self._toggle()
@@ -74,7 +61,6 @@ class CheckBox(Interaction):
             return False, self.get_value()
         label = self._labels[self._active_index]
         if self._mode == 'single':
-            # Deselect all others, toggle this one
             new_state = not self._items[label]
             for k in self._labels:
                 self._items[k] = False
