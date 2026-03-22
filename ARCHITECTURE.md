@@ -34,8 +34,8 @@
 tui_wysiwyg/
 ├── __init__.py          # Public API re-exports
 ├── shell.py             # Shell class — top-level user-facing object
-├── parser.py            # Shell definition language → LayoutModel
-├── layout.py            # LayoutModel, Row, Column, Region data classes
+├── parser.py            # Shell definition language → LayoutModel (recursive tree)
+├── layout.py            # HSplit, VSplit, Panel, LayoutModel, Region data classes
 ├── renderer.py          # Terminal rendering via blessed
 ├── events.py            # Keyboard input reading and dispatch
 ├── observer.py          # Observer/callback system for inter-region communication
@@ -56,11 +56,38 @@ tui_wysiwyg/
 |-----------|---------------|
 | `Shell` | Top-level API. Owns the layout, renderer, and event loop. Exposes `assign`, `run`, `get`, `update`, `bind`. |
 | `Parser` | Tokenizes and validates the shell definition string. Produces a `LayoutModel`. |
-| `LayoutModel` | Immutable data structure describing the grid: rows, columns, region names, and dimensions. |
+| `LayoutModel` | Immutable recursive tree describing the layout: `HSplit` / `VSplit` / `Panel` nodes rooted at `model.root`. Resolves to flat `Region` list via `resolve(width, height)`. |
 | `Renderer` | Translates `LayoutModel` + interaction states into terminal output via `blessed`. Supports partial redraws of individual regions. |
 | `Events` | Reads keypresses via `blessed`'s `Terminal.inkey()`. Dispatches to the focused region's interaction handler. |
 | `Observer` | Tracks `on_change` callbacks per region name. Called by interactions when their value changes. |
 | `Interaction` (base) | Defines the interface all interaction types implement: `render(region)`, `handle_key(key) -> bool`, `get_value()`, `set_value(value)`. |
+
+---
+
+## Recursive Layout Model
+
+The layout is represented as a tree of three node types:
+
+```
+LayoutNode = HSplit | VSplit | Panel
+```
+
+| Node | Fields | Meaning |
+|------|--------|---------|
+| `HSplit` | `top: LayoutNode \| None`, `bottom: LayoutNode \| None`, `border: BorderRow \| None` | A horizontal split. `top` sits above `border` sits above `bottom`. Either `top` or `bottom` may be `None`. |
+| `VSplit` | `left: LayoutNode`, `right: LayoutNode`, `divider: str` | A vertical split (`'single'` = `│`, `'double'` = `║`). |
+| `Panel` | `name`, `heading`, `width`, `is_pct`, `pct`, `row_count`, … | Leaf node — a single rectangular region. If `name` is set the region is interactive. |
+
+`LayoutModel` holds `root: LayoutNode | None` and `has_percentage: bool`. The `resolve(term_width, term_height)` method walks the tree recursively and returns a flat `list[Region]` of named regions with absolute `(row, col, width, height)` coordinates.
+
+### Width and height helpers
+
+Two private helpers are exported for use by the renderer:
+
+- `_declared_width(node, available, pct_base)` — returns the width the node claims, or `available` if the node fills remaining space.
+- `_declared_height(node, available)` — returns the height the node claims, or the `num_rows_def` fallback.
+
+**`pct_base`** is the total interior width computed once at the outermost `VSplit` of each horizontal section and passed unchanged through nested `VSplit` nodes. It is reset to `None` at `HSplit` boundaries so each new row of sections has its own `pct_base`.
 
 ---
 
@@ -70,13 +97,20 @@ tui_wysiwyg/
 Shell Definition String
         │
         ▼
-    Parser
-        │  produces
+    Parser  (recursive _parse_block)
+        │  strips outer |, recurses: HSplit first → VSplit → Panel leaf
         ▼
-   LayoutModel  ◄──── Terminal size (for % widths)
+   LayoutModel (root: HSplit/VSplit/Panel tree)
+        │
+        │  resolve(term_width, term_height)
+        ▼
+   list[Region]  ◄──── Terminal size (for % widths)
         │
         ▼
-   Renderer ◄──── Interaction.render() for each named region
+   Renderer (3 passes)
+     Pass 1: outer │ walls for all rows
+     Pass 2: _render_structure — recursive dividers & borders
+     Pass 3: content regions (interaction.render per region)
         │
         ▼
    Terminal Output
@@ -98,6 +132,25 @@ User Keypress
         ▼
    Renderer.redraw_region(other_region)
 ```
+
+---
+
+## Renderer Design
+
+`Renderer.full_render()` uses three sequential passes:
+
+1. **Outer walls** — Prints `│` at column 0 and column `term_width-1` for every terminal row. This draws the left and right outer borders for the entire screen height.
+
+2. **Structure pass** — `_render_structure(node, row, col, width, height, pct_base, left_div, right_div, term_width)` walks the tree recursively:
+   - **`VSplit`**: draws the vertical divider character (`│` or `║`) for the full height, then recurses into `left` and `right` sub-trees. Tracks `pct_base` for percentage-width columns.
+   - **`HSplit`**: recurses into `top`, draws the border row via `draw_border()`, then recurses into `bottom`. `pct_base` is reset to `None` for both children.
+   - **`Panel`**: base case — no structural drawing needed.
+
+3. **Content pass** — Iterates the flat `regions` dict; for each region calls `interaction.render()` (if assigned) or `_render_empty_region()`.
+
+`draw_border()` accepts optional `start_col` / `end_col` parameters so partial-width borders (inside one branch of a `VSplit`) are drawn at the correct absolute columns. Intersection characters at divider positions are computed from `_bottom_face_dividers()` / `_top_face_dividers()` which walk the node tree to find all `VSplit` divider columns visible at a border's top or bottom face.
+
+"Partial borders" (a border that spans only part of the screen width) are no longer a special case — after vertical splitting, what was `---|{...}|---` becomes a full `---` border inside a sub-block. The renderer handles it as an ordinary `HSplit` border.
 
 ---
 

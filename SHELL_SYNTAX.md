@@ -55,9 +55,11 @@ Every shell definition is a series of **rows**. Each row is a line in the string
 
 | Row Type | Description |
 |----------|-------------|
-| **Border row** | A horizontal rule spanning the full width (`====` or `----`) |
+| **Border row** | A horizontal rule (`====` or `----`) — may appear at any nesting level, not just at the outermost level |
 | **Column row** | A line containing one or more `{ }` column blocks |
 | **Filler row** | A column row that contains no `$name$` markers and no row-count marker — used for human readability only, ignored by the parser |
+
+The parser discovers layout structure recursively: it looks for horizontal splits first, then vertical splits, then treats the remaining content as a single region (leaf). This means layouts are not restricted to a fixed number of levels — columns can contain further horizontal or vertical splits to arbitrary depth.
 
 ---
 
@@ -328,19 +330,52 @@ attr         ::= NAME ["=" VALUE]
 
 ## Parser Behavior
 
-The parser processes the shell definition string as follows:
+The parser processes the shell definition string using a recursive algorithm:
 
 1. Strip `/* ... */` comments, preserving the newlines they contained.
-2. Split on newlines.
-3. Strip each line. Empty lines are ignored.
-4. Validate that each line begins and ends with `|`.
-5. Classify each line as a border row or column row.
-6. Group consecutive column rows between border rows into **row groups**.
-7. Within each row group, parse column blocks and extract widths, row counts, and region names.
-8. Validate: no duplicate names, no width overflow (fixed widths only), at least one row count per group (warning if missing).
-9. Return a `LayoutModel`.
+2. Split on newlines. Strip each line. Empty lines are ignored.
+3. Validate that each line begins and ends with `|`. Strip the outer `|` from every line before recursing.
+4. Call `_parse_block(lines)` on the remaining inner content.
 
-Style tags in border row titles are stored as-is in the `LayoutModel` and are parsed at render time by `render_styled()`. This means style tags do not affect parsing or validation.
+### `_parse_block` (recursive)
+
+```
+_parse_block(lines):
+    i = find_full_hsplit(lines)   # first border row with no '{' character
+    if i is not None:
+        return HSplit(
+            top    = _parse_block(lines[:i])    if lines[:i]   else None,
+            border = parse_border_row(lines[i]),
+            bottom = _parse_block(lines[i+1:]) if lines[i+1:] else None,
+        )
+
+    pos = find_full_vsplit(lines)  # first column where ALL column rows have '|' or '#'
+    if pos is not None:
+        left_lines, right_lines = split_vertical(lines, pos)
+        return VSplit(
+            left    = _parse_block(left_lines),
+            right   = _parse_block(right_lines),
+            divider = 'double' if char == '#' else 'single',
+        )
+
+    return parse_leaf(lines)       # extract Panel: name, width, row_count, etc.
+```
+
+**`find_full_hsplit`** returns the index of the first line whose stripped content starts with `=` or `-` and contains no `{`. Border rows that span the full horizontal extent (including inside a sub-block after vertical splitting) are detected this way.
+
+**`find_full_vsplit`** scans all column rows for the first character position that is `|` or `#` in every column row. It ignores full border rows when scanning. The scan tracks brace depth so that `|` characters inside `{...}` blocks are not treated as dividers.
+
+**`split_vertical`** splits each line at its own first outer divider character (tracking brace depth independently per line). This handles inconsistent whitespace padding between columns.
+
+**Partial borders** are handled automatically: after vertical splitting, a row like `-----|{...}|-----` becomes a full border row `-----` in the left sub-block and a column row `{...}` in the right sub-block. No special-case logic is needed.
+
+### Validation
+
+After the recursive parse, the `LayoutModel` is validated for:
+- Duplicate region names (raises `ShellSyntaxError`).
+- Missing outer `|` borders (raises `ShellSyntaxError`).
+
+Style tags in border row titles are stored as-is and parsed at render time by `render_styled()`. They do not affect parsing or validation.
 
 ---
 

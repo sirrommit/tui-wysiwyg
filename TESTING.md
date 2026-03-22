@@ -18,21 +18,22 @@ pytest --cov=tui_wysiwyg --cov-report=term-missing
 
 Unit tests for the shell definition language parser. No terminal required.
 
-- Valid shell definitions parse to the expected `LayoutModel`.
+- Valid shell definitions parse to the expected `LayoutModel` with a recursive `HSplit`/`VSplit`/`Panel` tree rooted at `model.root`.
+- Tree structure verified by depth-first traversal helpers (`collect_panels`, `collect_borders`, `collect_vsplits`).
 - All `ShellSyntaxError` cases are triggered by the appropriate malformed input.
-- Width calculation (fixed, percentage, remainder).
-- Row-count extraction.
+- Width calculation (fixed, percentage, remainder) via `Panel.width`/`Panel.pct`.
+- Row-count extraction via `Panel.row_count`.
 - Region name extraction and deduplication check.
 - Filler rows are correctly ignored.
-- Escape sequences produce correct literal output.
+- Partial border layouts parse to an `HSplit` within one branch of a `VSplit`.
 
 ### 2. Layout Tests (`tests/test_layout.py`)
 
-Unit tests for `LayoutModel` geometry.
+Unit tests for the recursive layout model and geometry helpers.
 
-- Region coordinate calculation given known terminal size.
-- Percentage → character conversion.
-- Resize produces updated coordinates.
+- `_declared_width(node, available, pct_base)`: fill column, fixed-width column, percentage column, `HSplit` delegation, `VSplit` takes all available.
+- `_declared_height(node, available)`: explicit row count, percentage row count, fallback to `num_rows_def`, minimum 1, `HSplit` sums children (+1 for border), `VSplit` takes max child.
+- `LayoutModel.resolve()`: region coordinate calculation given known terminal size, percentage → character conversion, row/column position, named-only regions returned, frozen `Region` objects.
 
 ### 3. Interaction Tests (`tests/test_interactions.py`)
 
@@ -72,11 +73,11 @@ Integration tests for the full `Shell` object, using `MockTerminal` and simulate
 
 Tests that the renderer writes the expected character sequences to the terminal buffer, using `MockTerminal`.
 
-- Border rows render with correct characters.
-- Column widths are correct.
-- Focus indicator renders on the focused region.
-- Partial re-render of a single region does not overwrite adjacent regions.
-- Resize triggers full redraw with updated layout.
+- Border rows render with correct box-drawing characters (double and single styles).
+- Border intersection characters are correct when dividers meet a border row.
+- `draw_border` with `start_col`/`end_col` renders partial-width borders at the correct position.
+- `full_render` with `Parser`→`model.resolve()` tree writes border and content output.
+- Partial border layouts render without error.
 
 ---
 
