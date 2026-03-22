@@ -143,7 +143,7 @@ Asks the user to type a single line of text.
 |--------|-------------|-------------|
 | `prompt` | `ListView` | Display-only prompt text |
 | `entry` | `TextBox(wrap='extend')` | Single-line text entry |
-| `buttons` | `MenuFunction` | `{"OK": <submit handler>, "Cancel": <cancel handler>}` |
+| `buttons` | `_SubmittingMenu("entry")` | OK reads `shell.get("entry")` and exits; Cancel exits with `None` |
 
 ### Sizing
 
@@ -165,10 +165,9 @@ InputPrompt(
 
 ### Notes
 
-- `buttons` uses `MenuFunction` so the OK handler can read `shell.get("entry")`
-  before signalling exit.
-- The `MenuFunction` OK callback calls an internal `_submit()` that stores the
-  entry value and sets `_should_exit = True`.
+- `buttons` is a `_SubmittingMenu("entry")` — an internal `MenuFunction`
+  subclass whose OK handler reads `shell.get("entry")`, stores the result,
+  and sets `_submitted = True` so `signal_return()` exits the modal.
 
 ---
 
@@ -195,7 +194,7 @@ scrollable list.
 |--------|-------------|-------------|
 | `prompt` | `ListView` | Display-only prompt text |
 | `items` | `CheckBox` (multi) or `MenuReturn` (single) | The selectable list |
-| `buttons` | `MenuReturn` | `{"OK": "_submit", "Cancel": None}` — only shown in multi mode |
+| `buttons` | `_SubmittingMenu("items")` | OK reads `shell.get("items")` and exits; Cancel exits with `None` — only shown in multi mode |
 
 ### Sizing
 
@@ -222,8 +221,8 @@ ListSelect(
 
 - In single mode `items` is a `MenuReturn`; selecting any item immediately exits
   (no OK button needed — the buttons region is omitted from the shell definition).
-- In multi mode `items` is a `CheckBox`; OK reads `shell.get("items")` and returns
-  the full checked dict.
+- In multi mode `items` is a `CheckBox`; `buttons` is a `_SubmittingMenu("items")`
+  whose OK handler reads `shell.get("items")` and returns the full checked dict.
 
 ---
 

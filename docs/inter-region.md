@@ -113,16 +113,24 @@ handle.remove()
 
 ## `Shell.update(name, value)`
 
-Programmatically set the value of a region and re-render it.
+Programmatically set the value of a region and schedule a redraw.
 
 ```python
 def update(name: str, value: Any) -> None
 ```
 
-- Validates that `name` is a known region and that `value` is appropriate for the assigned interaction type. Raises `RegionNotFoundError` or `ValueError` on invalid input.
+Thin delegation to `interaction.set_value(value)`:
+
+- Raises `RegionNotFoundError` if `name` is not a known region; silently
+  ignores the call if no interaction is assigned to that region yet.
+- Calls `set_value()` on the assigned interaction. Validation (if any) is
+  interaction-specific — `update()` does not perform a universal type-check.
+- Marks the region dirty; the actual redraw happens lazily on the next
+  event-loop tick, not immediately.
 - Triggers `on_change` callbacks for `name`.
-- Re-renders the region immediately.
-- Can be called from within a `MenuFunction` callback, from a `Function` handler, or from any other code that holds a reference to the `Shell` instance.
+- Can be called from within a `MenuFunction` callback, from a `Function`
+  handler, or from any other code that holds a reference to the `Shell`
+  instance.
 
 ---
 

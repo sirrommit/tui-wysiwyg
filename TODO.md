@@ -51,11 +51,11 @@ Items are ordered by priority. Complete each group before moving to the next.
 
 ### 5. Correct documentation to match implementation
 
-- [ ] `docs/api.md` — rewrite `Shell.update()` section: describe as thin delegation to `set_value()`, validation is interaction-specific, redraw is lazy (dirty flag, not immediate)
-- [ ] `docs/inter-region.md` — same `Shell.update()` correction
-- [ ] `docs/interactions/index.md` — replace "highlighted border" with "row-level highlighting within the region (reverse video on active row or `>` prefix)"
-- [ ] `docs/interactions/form-input.md` — remove cursor description; correct validation docs to describe submit-time validation (not nav-time); remove claim that invalid numeric input blocks navigation
-- [ ] `docs/widgets/index.md` — update `InputPrompt` internals to reference `_SubmittingMenu`; update `ListSelect` buttons description to reference `_SubmittingMenu` in multi mode
+- [x] `docs/api.md` — rewrite `Shell.update()` section: describe as thin delegation to `set_value()`, validation is interaction-specific, redraw is lazy (dirty flag, not immediate)
+- [x] `docs/inter-region.md` — same `Shell.update()` correction
+- [x] `docs/interactions/index.md` — replace "highlighted border" with "row-level highlighting within the region (reverse video on active row or `>` prefix)"
+- [x] `docs/interactions/form-input.md` — remove cursor description; correct validation docs to describe submit-time validation (not nav-time); remove claim that invalid numeric input blocks navigation
+- [x] `docs/widgets/index.md` — update `InputPrompt` internals to reference `_SubmittingMenu`; update `ListSelect` buttons description to reference `_SubmittingMenu` in multi mode
 
 ### 6. `FilePicker` editable path field drives browsing state
 

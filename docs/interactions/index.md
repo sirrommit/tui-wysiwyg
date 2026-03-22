@@ -28,9 +28,9 @@ Interactions are assigned via `Shell.assign(name, interaction)`. See [api.md](..
 
 All interactive regions share these behaviors:
 
-- **Focus indicator:** The currently focused region has a highlighted border (or, if the terminal does not support it, a `>` marker on the active line).
+- **Focus indicator:** The currently focused region uses row-level highlighting — the active row is shown in reverse video (or a `>` prefix as a fallback when the terminal does not support reverse video). There is no highlighted border.
 - **Value:** Every interaction type has a current value accessible via `Shell.get(name)`.
-- **Update:** A region's value can be set programmatically via `Shell.update(name, value)`, which re-renders that region only.
+- **Update:** A region's value can be set programmatically via `Shell.update(name, value)`, which marks that region dirty for redraw on the next event-loop tick.
 - **Change notification:** When a region's value changes (by user input or `Shell.update`), any registered `on_change` callbacks fire. See [inter-region.md](../inter-region.md).
 
 ---

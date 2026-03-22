@@ -79,7 +79,7 @@ Fields are rendered in insertion order, one per row:
 
 - The separator line and `[ Submit ]` entry appear at the bottom of the field list.
 - The focused row is highlighted (reverse video or `>` prefix fallback).
-- For `str`, `int`, and `float` fields: the value area is an inline single-line text input with a visible cursor when focused.
+- For `str`, `int`, and `float` fields: the value area is an inline single-line text input; there is no blinking cursor — the focused row is shown in reverse video like any other active row.
 - For `bool` fields: the current value is shown as `< Yes >` or `< No >`.
 - For `choices` fields: the current selection is shown as `< Option >`.
 - If a field has a validation error, the error message is shown on the line below the field in a dimmed or distinct style:
@@ -101,13 +101,21 @@ Fields are rendered in insertion order, one per row:
 | `"bool"` | Not a text field. `Space`, `Enter`, `←`, or `→` toggles between `True` and `False`. |
 | `"choices"` | Not a text field. `←` / `→` or `Space` cycles through `options`. |
 
-## Validation on Navigation Away
+## Validation
 
-When the user moves focus away from a field (via `↑`, `↓`, or `Tab`), the following checks run in order:
+All validation runs at **submit time** only — navigation between fields never
+triggers validation.  The user can freely move focus away from a field
+regardless of whether its current value is valid.
 
-1. **Type parse:** For `int` and `float`, the entered string is parsed. If it cannot be parsed (e.g. `"abc"` for an `int`), an error is shown and focus is kept on the field — the user cannot leave until the value is parseable or the field is emptied.
-2. **`validator`:** If provided, called with the parsed value. If it returns a string, the error is shown inline. The user *may* navigate away (the error persists until corrected); submission is blocked while the error stands.
-3. **`required`:** Checked only at submit time, not on navigation away.
+When the user activates `[ Submit ]`, the following checks run for each
+field in order:
+
+1. **Type parse:** For `int` and `float`, the entered string is parsed.
+   If it cannot be parsed (e.g. `"abc"` for an `int`), an error is recorded.
+2. **`validator`:** If provided, called with the parsed value. If it returns
+   a string, that string is recorded as an error.
+3. **`required`:** If `True` and the field is empty (or the parsed value is
+   falsy), an error is recorded.
 
 ## Submit Behavior
 

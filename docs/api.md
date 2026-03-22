@@ -169,18 +169,22 @@ Raises `RegionNotFoundError` if `name` does not exist.
 
 ### `Shell.update(name, value)`
 
-Programmatically set a region's value and re-render it.
+Programmatically set a region's value and schedule a redraw.
 
 ```python
 def update(name: str, value: Any) -> None
 ```
 
-- Validates that `value` is appropriate for the region's interaction type.
+Thin delegation to `interaction.set_value(value)`:
+
+- Calls `set_value()` on the assigned interaction (validation, if any, is
+  interaction-specific — there is no universal type-check in `update()`).
+- Marks the region dirty; the actual redraw happens lazily on the next
+  event-loop tick, not immediately.
 - Fires any `on_change` callbacks registered on `name`.
-- Re-renders the region immediately (or marks it dirty if called outside the event loop).
 
 Raises `RegionNotFoundError` if `name` does not exist.
-Raises `ValueError` if `value` is not compatible with the assigned interaction type.
+If the region has no interaction assigned, the call is silently ignored.
 
 ---
 
