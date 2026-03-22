@@ -135,6 +135,34 @@ class TestLayoutModelResolve:
         side = next(r for r in regions if r.name == 'side')
         assert side.width == 19
 
+    def test_resolve_fill_left_fixed_right(self):
+        # fill | fixed-14: right must get exactly 14, left gets the rest
+        shell = """
+|=====|
+|{12R $path$ }|{14 12R $filter$ }|
+|=====|
+"""
+        model = Parser().parse(shell)
+        regions = model.resolve(80, 24)
+        by_name = {r.name: r for r in regions}
+        assert by_name['filter'].width == 14
+        # left border(1) + path_width + divider(1) + 14 + right border(1) = 80
+        # => path_width = 80 - 1 - 1 - 14 - 1 = 63
+        assert by_name['path'].width == 63
+
+    def test_resolve_fixed_left_fill_right(self):
+        # fixed-14 | fill: left gets 14, right gets the rest (existing behaviour)
+        shell = """
+|=====|
+|{14 12R $filter$ }|{12R $path$ }|
+|=====|
+"""
+        model = Parser().parse(shell)
+        regions = model.resolve(80, 24)
+        by_name = {r.name: r for r in regions}
+        assert by_name['filter'].width == 14
+        assert by_name['path'].width == 63
+
     def test_resolve_unnamed_columns_excluded(self):
         shell = """
 |=====|

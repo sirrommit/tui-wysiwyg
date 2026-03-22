@@ -1,6 +1,6 @@
 # Recursive Split-Tree Refactor Plan — COMPLETED
 
-> All four phases were implemented and 213 tests pass. This document is retained for historical reference. The authoritative description of the architecture is now in `ARCHITECTURE.md` and `SHELL_SYNTAX.md`.
+> All four phases were implemented and 213 tests pass. This document is retained for historical reference. The authoritative description of the architecture is now in [architecture.md](architecture.md) and [shell-syntax.md](shell-syntax.md).
 
 
 ## Goal

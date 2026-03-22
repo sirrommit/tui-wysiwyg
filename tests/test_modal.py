@@ -106,3 +106,37 @@ class TestRunModal:
         term.feed_keys(["KEY_DOWN", "KEY_ENTER"])   # move to "No" → False
         result = popup.run_modal(row=5, col=10, width=20, height=4)
         assert result is False
+
+    def test_run_modal_no_args_works(self, term):
+        """run_modal() with no positional args infers size and centers the popup."""
+        popup = _popup(term)
+        term.feed_keys(["\x1b"])
+        result = popup.run_modal()   # width/height/row/col all auto
+        assert result is None
+
+    def test_run_modal_fixed_height_auto_detected(self, term):
+        """A popup with explicit nR panels has its height auto-detected."""
+        fixed_def = """\
+|=== Fixed ===|
+|{2R $choice$ }|
+|=============|
+"""
+        popup = Shell(fixed_def, _terminal=term)
+        popup.assign("choice", MenuReturn({"Yes": True, "No": False}))
+        term.feed_keys(["\x1b"])
+        result = popup.run_modal()   # height should be 4 (1+2+1), width = 60%
+        assert result is None
+        # Verify regions landed inside the auto-detected height=4 bounding box.
+        for region in popup._regions.values():
+            assert region.row + region.height <= term.height
+
+    def test_run_modal_fill_height_defaults_to_60pct(self, term):
+        """A popup without explicit row counts defaults to 60% of terminal height."""
+        # POPUP_DEF has no explicit row count → height = 60% of 24 = 14
+        popup = _popup(term)
+        term.feed_keys(["\x1b"])
+        popup.run_modal()
+        expected_h = max(1, int(24 * 0.6))   # 14
+        expected_row = max(0, (24 - expected_h) // 2)
+        for region in popup._regions.values():
+            assert region.row + region.height <= expected_row + expected_h

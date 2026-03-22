@@ -6,7 +6,7 @@ try:
 except ImportError:
     _HAS_TERMIOS = False
 from .parser import Parser
-from .layout import LayoutModel
+from .layout import LayoutModel, _fixed_width, _fixed_height
 from .renderer import Renderer
 from .events import EventLoop
 from .observer import Observer, ChangeHandle
@@ -231,7 +231,7 @@ class Shell:
 
         return None
 
-    def run_modal(self, row: int, col: int, width: int, height: int,
+    def run_modal(self, row=None, col=None, width=None, height=None,
                   parent_shell=None):
         """Run this Shell as a modal popup overlaid at (row, col, width, height).
 
@@ -240,12 +240,35 @@ class Shell:
         example, from inside a MenuFunction callback).  Does NOT re-enter those
         context managers.
 
-        parent_shell — if provided, its display is fully restored when the
-                       modal exits.
+        width / height — if omitted, the shell's natural size is used when every
+                         panel carries an explicit fixed dimension (nR / n-char).
+                         Otherwise defaults to 60 % of the terminal dimension.
+        row / col      — if omitted, the popup is centered on screen.
+        parent_shell   — if provided, its display is fully restored when the
+                         modal exits.
 
         Returns the modal's exit value (same semantics as run()).
         Escape or Ctrl+Q dismiss the modal and return None.
         """
+        term = self._term
+        tw = term.width  or 80
+        th = term.height or 24
+        root = self._layout.root
+
+        if width is None:
+            fw = _fixed_width(root)
+            width = (fw + 2) if fw is not None else max(1, int(tw * 0.6))
+
+        if height is None:
+            fh = _fixed_height(root)
+            height = fh if fh is not None else max(1, int(th * 0.6))
+
+        if row is None:
+            row = max(0, (th - height) // 2)
+
+        if col is None:
+            col = max(0, (tw - width) // 2)
+
         self._resolve_layout(width=width, height=height,
                              offset_row=row, offset_col=col)
 

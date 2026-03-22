@@ -38,7 +38,7 @@ class Shell(definition: str)
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `definition` | `str` | The shell definition string (see `SHELL_SYNTAX.md`) |
+| `definition` | `str` | The shell definition string (see [shell-syntax.md](shell-syntax.md)) |
 
 Raises `ShellSyntaxError` if the definition is malformed.
 
@@ -57,7 +57,7 @@ def assign(name: str, interaction: Interaction) -> None
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | `str` | Region name as declared in the shell definition (without `$`) |
-| `interaction` | `Interaction` | Any interaction instance (see `INTERACTIONS.md`) |
+| `interaction` | `Interaction` | Any interaction instance (see [interactions/index.md](interactions/index.md)) |
 
 Raises `RegionNotFoundError` if `name` does not exist in the shell definition.
 Raises `ValueError` if the region already has an assigned interaction (call `Shell.unassign` first).
@@ -87,6 +87,72 @@ Raises `KeyboardInterrupt` if the user presses `Ctrl+C`.
 
 ---
 
+### `Shell.run_modal(row=None, col=None, width=None, height=None, parent_shell=None)`
+
+Run this Shell as a modal popup overlaid at a fixed position on an already-running parent Shell.
+
+```python
+def run_modal(
+    row: int | None = None,
+    col: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
+    parent_shell: Shell | None = None,
+) -> Any
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `row` | `int \| None` | centered | Top row of the popup in terminal coordinates (0-based). Auto-centers if omitted. |
+| `col` | `int \| None` | centered | Left column of the popup in terminal coordinates (0-based). Auto-centers if omitted. |
+| `width` | `int \| None` | auto | Width of the popup in characters (including outer border walls). See sizing rules below. |
+| `height` | `int \| None` | auto | Height of the popup in rows (including border rows). See sizing rules below. |
+| `parent_shell` | `Shell \| None` | `None` | If provided, the parent Shell's full display is re-rendered when the popup closes, erasing the popup ghost. |
+
+**Auto-sizing rules:**
+
+| Dimension | Layout uses explicit `nR` / `n`-char | Layout uses `%` or fill |
+|-----------|--------------------------------------|-------------------------|
+| `width` omitted | natural width detected from layout | 60% of terminal width |
+| `height` omitted | natural height detected from layout | 60% of terminal height |
+
+"Explicit" means every panel carries a fixed character count (`n`-char for width, `nR` for height). Percentages and fill regions are treated as variable.
+
+**Returns:** The popup's exit value — same semantics as `run()`. Returns `None` if the user presses Escape or Ctrl+Q.
+
+**When to use:** Call `run_modal()` from inside a `MenuFunction` callback, while the parent Shell's `run()` is executing. The parent's terminal context (alternate screen, cbreak mode, hidden cursor) must already be active — `run_modal()` does **not** re-enter those context managers.
+
+**Typical pattern:**
+
+```python
+CONFIRM_POPUP = """\
+|================|
+|{2R $msg$       }|
+|----------------|
+|{2R $choice$    }|
+|================|
+"""
+
+def my_action(sh):
+    popup = Shell(CONFIRM_POPUP, _terminal=sh.terminal)
+    popup.assign("msg",    ListView(["Are you sure?", ""], bullet=" "))
+    popup.assign("choice", MenuReturn({"Yes": True, "No": False}))
+    # height=7 is auto-detected from the 2R declarations; row/col auto-center.
+    # width is explicit (fill panels have no natural width).
+    confirmed = popup.run_modal(width=30, parent_shell=sh)
+    if confirmed:
+        sh.update("status", ["Done!"])
+```
+
+**Notes:**
+- The popup Shell uses its own layout definition, independent of the parent.
+- Only the bounding box `(row, col, width, height)` is drawn; content outside is untouched.
+- Escape and Ctrl+Q both dismiss the popup and return `None`.
+- Pass the same `_terminal` instance to both the parent and popup Shells.
+- The popup's interaction focus starts on the first focusable region (reading order).
+
+---
+
 ### `Shell.get(name)`
 
 Get the current value of a named region.
@@ -95,7 +161,7 @@ Get the current value of a named region.
 def get(name: str) -> Any
 ```
 
-Returns the value as defined by the region's interaction type (see `INTERACTIONS.md` for per-type return values). Returns `None` for regions with no assigned interaction or for regions whose interaction has not yet produced a value.
+Returns the value as defined by the region's interaction type (see [interactions/index.md](interactions/index.md) for per-type return values). Returns `None` for regions with no assigned interaction or for regions whose interaction has not yet produced a value.
 
 Raises `RegionNotFoundError` if `name` does not exist.
 
@@ -128,7 +194,7 @@ def on_change(name: str, callback: Callable[[Any], None]) -> ChangeHandle
 
 Returns a `ChangeHandle` with a `.remove()` method to deregister the callback.
 
-See `INTER_REGION.md` for full details and examples.
+See [inter-region.md](inter-region.md) for full details and examples.
 
 ---
 
@@ -146,7 +212,7 @@ def bind(
 
 Returns a `ChangeHandle` with a `.remove()` method.
 
-See `INTER_REGION.md` for full details and examples.
+See [inter-region.md](inter-region.md) for full details and examples.
 
 ---
 
@@ -200,7 +266,7 @@ Raises `ValueError` if the region has no assigned interaction (static regions ca
 
 ## Interaction Classes
 
-All interaction classes live in `tui_wysiwyg.interactions`. See `INTERACTIONS.md` for full behavioral documentation.
+All interaction classes live in `tui_wysiwyg.interactions`. See [interactions/index.md](interactions/index.md) for full behavioral documentation.
 
 ```python
 from tui_wysiwyg.interactions import (

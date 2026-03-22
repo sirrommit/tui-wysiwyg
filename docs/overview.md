@@ -15,6 +15,50 @@ This project is a python library to create customized and rich text based user i
 - $name$ names the region of the TUI shell so that it can be referenced by other sections of the program.
 - {  } {  } would create two columns separated by a space.
 
+## Shell API
+
+The main entry points on a `Shell` object:
+
+- `shell.assign(name, interaction)` — attach an interaction to a named region
+- `shell.run()` — start the event loop; blocks until the user exits; returns the selected value or `None`
+- `shell.run_modal(row, col, width, height, parent_shell=None)` — run this shell as a popup overlay at a fixed position on top of an already-running parent shell (see below)
+- `shell.get(name)` — read the current value of a region
+- `shell.update(name, value)` — programmatically set a region's value
+- `shell.on_change(name, callback)` — register a callback for value changes
+- `shell.bind(source, target, transform=None)` — wire one region's value to another
+
+## Modal Dialogs
+
+A modal dialog is a second `Shell` rendered as a popup overlay on top of a running parent shell. Use `Shell.run_modal()` instead of `Shell.run()` when the parent shell is already active (e.g., from inside a `MenuFunction` callback).
+
+```python
+CONFIRM_POPUP = """\
+|================|
+|{2R $msg$       }|
+|----------------|
+|{2R $choice$    }|
+|================|
+"""
+
+def my_action(sh):
+    term = sh.terminal
+    tw, th = term.width or 80, term.height or 24
+    popup = Shell(CONFIRM_POPUP, _terminal=term)
+    popup.assign("msg",    ListView(["Are you sure?", ""], bullet=" "))   # 2 rows
+    popup.assign("choice", MenuReturn({"Yes": True, "No": False}))        # 2 rows
+    # height=7 auto-detected from the 2R declarations; row/col auto-center.
+    # width must be explicit because $msg$ and $choice$ are fill panels.
+    confirmed = popup.run_modal(width=30, parent_shell=sh)  # restores parent on close
+    if confirmed:
+        sh.update("status", ["Done!"])
+```
+
+Key points:
+- Pass the same `_terminal` instance to both parent and popup Shells.
+- Call `run_modal()` from inside a `MenuFunction` callback while `Shell.run()` is active.
+- `parent_shell=sh` causes the parent display to be fully restored when the popup closes.
+- Escape and Ctrl+Q both dismiss the popup and return `None`.
+
 ## Methods of Interaction
 
 - menu-function

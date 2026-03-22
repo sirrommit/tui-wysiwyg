@@ -1,6 +1,7 @@
 import sys
 from .layout import (LayoutModel, Region, BorderRow, HSplit, VSplit, Panel,
-                     _declared_width, _declared_height, _num_vsplit_cols)
+                     _declared_width, _declared_height, _num_vsplit_cols,
+                     _vsplit_left_width)
 from .style import render_styled, styled_plain_text
 
 # ---------------------------------------------------------------------------
@@ -61,7 +62,7 @@ def _bottom_face_dividers(node, col: int, width: int, pct_base) -> dict:
     if isinstance(node, VSplit):
         if pct_base is None:
             pct_base = width - (_num_vsplit_cols(node) - 1)
-        left_width = _declared_width(node.left, width - 1, pct_base)
+        left_width = _vsplit_left_width(node, width, pct_base)
         div_col = col + left_width
         result = {div_col: node.divider}
         result.update(_bottom_face_dividers(node.left, col, left_width, pct_base))
@@ -84,7 +85,7 @@ def _top_face_dividers(node, col: int, width: int, pct_base) -> dict:
     if isinstance(node, VSplit):
         if pct_base is None:
             pct_base = width - (_num_vsplit_cols(node) - 1)
-        left_width = _declared_width(node.left, width - 1, pct_base)
+        left_width = _vsplit_left_width(node, width, pct_base)
         div_col = col + left_width
         result = {div_col: node.divider}
         result.update(_top_face_dividers(node.left, col, left_width, pct_base))
@@ -175,7 +176,7 @@ class Renderer:
         if isinstance(node, VSplit):
             if pct_base is None:
                 pct_base = width - (_num_vsplit_cols(node) - 1)
-            left_width = _declared_width(node.left, width - 1, pct_base)
+            left_width = _vsplit_left_width(node, width, pct_base)
             div_col = col + left_width
             div_char = '║' if node.divider == 'double' else '│'
             for r in range(height):
