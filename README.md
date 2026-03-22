@@ -686,6 +686,28 @@ Returns the value chosen by a `MenuReturn`/`MenuHybrid` selection or a `FormInpu
 
 ---
 
+### `shell.run_modal(row=None, col=None, width=None, height=None, parent_shell=None) -> Any`
+
+Run this Shell as a modal popup overlaid on top of an already-running TUI. Must be called from inside a `MenuFunction` callback (or any context where the terminal is already in fullscreen/cbreak mode).
+
+```python
+def open_confirm(sh):
+    popup = Shell(CONFIRM_LAYOUT)
+    popup.assign("buttons", MenuReturn({"OK": True, "Cancel": False}))
+    result = popup.run_modal(width=40, parent_shell=sh)
+    if result:
+        do_something()
+
+shell.assign("menu", MenuFunction({"Delete": open_confirm}))
+```
+
+- `width` / `height` — if omitted, auto-detected from the layout's fixed-size declarations; falls back to 60% of the terminal dimension.
+- `row` / `col` — if omitted, the popup is centered on the screen.
+- `parent_shell` — if provided, the parent's display is restored when the popup closes.
+- Escape or `Ctrl+Q` dismiss the popup and return `None`.
+
+---
+
 ### `shell.get(name) -> Any`
 
 Get the current value of a named region (see each interaction type for what "value" means).
@@ -727,6 +749,109 @@ Name of the currently focused region, or `None`.
 ### `shell.terminal` (property)
 
 The underlying `blessed.Terminal` instance. Use inside `Function` handlers to write directly to the terminal.
+
+---
+
+## Pre-built Widgets
+
+`tui_wysiwyg.widgets` provides seven ready-made popup dialogs built on `Shell.run_modal()`. Each widget exposes a `show(parent_shell=None, **kwargs)` method that constructs the Shell, assigns interactions, and returns the user's selection.
+
+```python
+from tui_wysiwyg.widgets import (
+    Confirm, Alert, InputPrompt, ListSelect,
+    FilePicker, DatePicker, Progress,
+)
+```
+
+All widgets are designed to be called from inside a `MenuFunction` callback where the terminal is already in fullscreen mode.
+
+### Confirm
+
+Yes/No (or any labelled button) confirmation dialog.
+
+```python
+result = Confirm(
+    title="Delete item?",
+    message_lines=["This cannot be undone.", ""],
+    buttons={"Yes": True, "No": False},
+    width=40,
+).show(parent_shell=sh)
+# returns True, False, or None (Escape)
+```
+
+### Alert
+
+Informational popup with a single OK button.
+
+```python
+Alert(title="Error", message_lines=["File not found."]).show(parent_shell=sh)
+```
+
+### InputPrompt
+
+Single-line text entry popup.
+
+```python
+name = InputPrompt(
+    title="Rename",
+    prompt_lines=["Enter new name:"],
+    initial="old_name",
+).show(parent_shell=sh)
+# returns str or None
+```
+
+### ListSelect
+
+Pick one item (single mode) or many items (multi mode) from a scrollable list.
+
+```python
+# Single selection — exits immediately on pick
+choice = ListSelect(title="Choose", items=["Alpha", "Beta", "Gamma"]).show(sh)
+
+# Multi selection — returns {label: bool} on OK
+selected = ListSelect(title="Pick features", items={"Dark mode": True, "Auto-save": False}, multi=True).show(sh)
+```
+
+### FilePicker
+
+Browse the filesystem to select a file or directory.
+
+```python
+path = FilePicker(
+    start_dir="/home/user/projects",
+    title="Open file",
+    filter="*.py",
+).show(parent_shell=sh)
+# returns absolute path str or None
+```
+
+### DatePicker
+
+Monthly calendar popup for selecting a date.
+
+```python
+import datetime
+date = DatePicker(
+    initial=datetime.date.today(),
+    title="Choose date",
+).show(parent_shell=sh)
+# returns datetime.date or None
+```
+
+### Progress
+
+Programmatically-driven progress bar. Used as a context manager — call `set_progress()` from inside the `with` block.
+
+```python
+with Progress(title="Processing…", total=len(items)).show(parent_shell=sh) as prog:
+    for i, item in enumerate(items, 1):
+        process(item)
+        prog.set_progress(i, f"Item {i}/{len(items)}")
+        if prog.cancelled:
+            break
+```
+
+See [`docs/widgets/`](docs/widgets/) for full documentation on each widget.
 
 ---
 
@@ -811,13 +936,37 @@ tui_wysiwyg/
 ├── style.py                 # Style tag parsing, render_styled(), strip_comments()
 ├── exceptions.py            # ShellSyntaxError, RegionNotFoundError, CircularUpdateError
 ├── testing.py               # MockTerminal
-└── interactions/
-    ├── __init__.py          # exports all interaction classes
-    ├── base.py              # Interaction ABC
-    ├── menu.py              # MenuFunction, MenuReturn, MenuHybrid
-    ├── textbox.py           # TextBox
-    ├── list_view.py         # ListView, SubList
-    ├── checkbox.py          # CheckBox
-    ├── function.py          # Function
-    └── form.py              # FormInput
+├── interactions/
+│   ├── __init__.py          # exports all interaction classes
+│   ├── base.py              # Interaction ABC
+│   ├── menu.py              # MenuFunction, MenuReturn, MenuHybrid
+│   ├── textbox.py           # TextBox
+│   ├── list_view.py         # ListView, SubList
+│   ├── checkbox.py          # CheckBox
+│   ├── function.py          # Function
+│   └── form.py              # FormInput
+└── widgets/
+    ├── __init__.py          # exports all widget classes
+    ├── confirm.py           # Confirm
+    ├── alert.py             # Alert
+    ├── input_prompt.py      # InputPrompt
+    ├── list_select.py       # ListSelect
+    ├── file_picker.py       # FilePicker
+    ├── date_picker.py       # DatePicker
+    └── progress.py          # Progress
 ```
+
+## Documentation
+
+Full documentation lives in [`docs/`](docs/):
+
+| Path | Contents |
+|------|----------|
+| [`docs/index.md`](docs/index.md) | Documentation index |
+| [`docs/api.md`](docs/api.md) | Full Shell API reference |
+| [`docs/architecture.md`](docs/architecture.md) | Internal design and data flow |
+| [`docs/shell-syntax.md`](docs/shell-syntax.md) | Complete shell definition language spec |
+| [`docs/inter-region.md`](docs/inter-region.md) | Observer pattern and inter-region communication |
+| [`docs/testing.md`](docs/testing.md) | Testing strategy and MockTerminal |
+| [`docs/interactions/`](docs/interactions/) | One page per interaction type |
+| [`docs/widgets/`](docs/widgets/) | One page per pre-built widget |
