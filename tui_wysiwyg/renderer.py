@@ -110,13 +110,21 @@ class Renderer:
         term = self._term
         print(term.clear, end='', flush=False)
 
-        # Pass 1: write a blank row with outer border walls for every terminal
-        # row. Writing the full row (not just the edge characters) guarantees
-        # that any content from a previous, taller layout is fully overwritten
-        # even on terminals where term.clear is unreliable.
+        # Pass 1: write rows with outer border walls up to the layout's actual
+        # height; write blank rows below. This clears any content left over from
+        # a previous taller layout without extending the outer border walls into
+        # empty screen space below the current UI.
+        layout_height = (
+            _declared_height(layout_model.root, term_height)
+            if layout_model.root is not None else 0
+        )
         blank_inner = ' ' * (term_width - 2)
+        blank_full  = ' ' * term_width
         for r in range(term_height):
-            print(term.move(r, 0) + '│' + blank_inner + '│', end='', flush=False)
+            if r < layout_height:
+                print(term.move(r, 0) + '│' + blank_inner + '│', end='', flush=False)
+            else:
+                print(term.move(r, 0) + blank_full, end='', flush=False)
 
         # Pass 2: recursive structure (internal dividers + borders)
         if layout_model.root is not None:
