@@ -112,6 +112,17 @@ directory = FilePicker(
 
 The `$path$` box is an editable TextBox.  The user can navigate with the
 tree/files panels, or Tab to `$path$` and type an absolute path directly.
+
+**Live path navigation:** as the user types in `$path$`, the widget checks
+whether the current text is a valid filesystem path on every keystroke:
+
+- If the text is an **existing directory**, `$tree$` and `$files$` update
+  immediately to show that directory's contents.  The path box continues to
+  display what the user typed.
+- If the text is an **existing file**, `$tree$` and `$files$` update to show
+  the file's parent directory.  The path box keeps the file path.
+- If the text does not exist, `$tree$` and `$files$` are unchanged.
+
 Pressing Open returns whatever is in the path box, so manually typed paths
 work without any tree navigation.
 

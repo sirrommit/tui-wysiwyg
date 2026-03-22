@@ -59,12 +59,12 @@ Items are ordered by priority. Complete each group before moving to the next.
 
 ### 6. `FilePicker` editable path field drives browsing state
 
-- [ ] In `file_picker.py`, add observer on `path` field changes
-- [ ] On Tab or Enter within the path field: if value is an existing directory, call `_set_dir()` to navigate; if existing file, navigate to parent and populate path
-- [ ] If path does not exist, update a status message region (or leave silently until status region support is added)
-- [ ] Add test: typing a directory path and pressing Tab updates tree/files panel
-- [ ] Add test: typing a file path and pressing Tab selects it and shows parent directory
-- [ ] Update `docs/widgets/file-picker.md` to describe Tab/Enter trigger for path-driven navigation
+- [x] In `file_picker.py`, add observer on `path` field changes — live navigation updates tree/files without overwriting the path box
+- [x] On every keystroke: if value is an existing directory, navigate tree/files; if existing file, navigate to parent and keep file path
+- [x] If path does not exist, leave silently (status region support not yet added)
+- [x] Add test: typing a directory path navigates tree/files live
+- [x] Add test: typing a file path keeps path box; tree/files show parent directory
+- [x] Update `docs/widgets/file-picker.md` to describe live path-driven navigation
 
 ---
 

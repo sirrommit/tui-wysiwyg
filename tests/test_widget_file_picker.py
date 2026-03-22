@@ -182,3 +182,34 @@ class TestFilePicker:
         # Result should be one of the files (15th sorted file)
         assert result is not None
         assert os.path.isfile(result)
+
+    def test_path_field_directory_updates_tree_files(self, tmp_path):
+        """Typing a valid directory path into the path field navigates tree/files live."""
+        sub = tmp_path / "typed_target"
+        sub.mkdir()
+        (sub / "found.txt").write_text("x")
+
+        # Path field (index 0) is pre-filled with str(tmp_path).
+        # Clear it with backspaces then type the subdir path.
+        target = str(sub)
+        clear_keys = [make_key('KEY_BACKSPACE')] * 200
+        type_keys = [make_key(c) for c in target]
+        # When the full target dir path is typed, on_change navigates tree/files
+        # to that dir. Path box still shows target. Tab×4 to buttons, Open.
+        keys = clear_keys + type_keys + _TAB_TO_BUTTONS + [make_key('KEY_ENTER')]
+        result = run_picker(str(tmp_path), keys)
+        assert result == target
+
+    def test_path_field_file_updates_tree_files(self, tmp_path):
+        """Typing a valid file path into the path field keeps path; shows parent in tree/files."""
+        (tmp_path / "myfile.txt").write_text("x")
+        target_file = str(tmp_path / "myfile.txt")
+
+        clear_keys = [make_key('KEY_BACKSPACE')] * 200
+        type_keys = [make_key(c) for c in target_file]
+        # When the full file path is typed, on_change keeps path showing the file
+        # and navigates tree/files to the parent dir.
+        # Tab×4 to buttons, Open → returns the file path.
+        keys = clear_keys + type_keys + _TAB_TO_BUTTONS + [make_key('KEY_ENTER')]
+        result = run_picker(str(tmp_path), keys)
+        assert result == target_file

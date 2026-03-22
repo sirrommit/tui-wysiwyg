@@ -240,6 +240,23 @@ class FilePicker:
         # Live filter: rebuild $files$ whenever the filter text changes.
         popup.on_change("filter", lambda _: _rebuild_files(popup))
 
+        # Path field: live navigation — when the user types a valid directory
+        # or file path, update tree/files without overwriting the path box.
+        def _on_path_change(value):
+            stripped = value.strip()
+            if os.path.isdir(stripped) and stripped != state["active_dir"]:
+                state["active_dir"] = stripped
+                _rebuild_tree(popup)
+                _rebuild_files(popup)
+            elif os.path.isfile(stripped):
+                parent = os.path.dirname(stripped)
+                if parent != state["active_dir"]:
+                    state["active_dir"] = parent
+                    _rebuild_tree(popup)
+                    _rebuild_files(popup)
+
+        popup.on_change("path", _on_path_change)
+
         return popup.run_modal(
             width=self.width,
             parent_shell=parent_shell,
