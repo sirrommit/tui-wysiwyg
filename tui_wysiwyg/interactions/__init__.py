@@ -4,6 +4,7 @@ from .list_view import ListView, SubList
 from .checkbox import CheckBox
 from .function import Function
 from .form import FormInput
+from .status_message import StatusMessage
 
 __all__ = [
     "MenuFunction",
@@ -15,4 +16,5 @@ __all__ = [
     "CheckBox",
     "Function",
     "FormInput",
+    "StatusMessage",
 ]

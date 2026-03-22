@@ -86,10 +86,10 @@ Items are ordered by priority. Complete each group before moving to the next.
 
 ### 9. Structured validation/status region support
 
-- [ ] Design a `StatusBar` or `ValidationMessage` interaction type (inline, within popup, not global)
-- [ ] Add standard error/success/info styling
-- [ ] Wire into `FormInput` and `FilePicker` path validation
-- [ ] Document in `docs/interactions/`
+- [x] Design a `StatusBar` or `ValidationMessage` interaction type (inline, within popup, not global)
+- [x] Add standard error/success/info styling
+- [x] Wire into `FormInput` and `FilePicker` path validation
+- [x] Document in `docs/interactions/`
 
 ### 10. Framework comparison table
 

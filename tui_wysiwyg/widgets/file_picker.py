@@ -23,7 +23,7 @@ Shell layout
 - ``$buttons$`` — ``_SubmittingMenu("path")``: Open returns ``shell.get("path")``;
                   Cancel returns ``None``.
 
-Height is auto-detected: **21 rows** (1+2+1+14+1+1+1).
+Height is auto-detected: **23 rows** (1+2+1+14+1+1+1+1+1).
 
 Usage
 -----
@@ -40,7 +40,7 @@ import os
 import fnmatch
 
 from tui_wysiwyg import Shell
-from tui_wysiwyg.interactions import TextBox
+from tui_wysiwyg.interactions import TextBox, StatusMessage
 from tui_wysiwyg.interactions.menu import MenuFunction
 from tui_wysiwyg.widgets._utils import _SubmittingMenu
 
@@ -51,6 +51,8 @@ def _shell_def(title: str) -> str:
         "|{2R $path$             }|{14 2R $filter$}|\n"
         "|-----------------------------------------|\n"
         "|{30% 14R $tree$        }|{14R $files$   }|\n"
+        "|-----------------------------------------|\n"
+        "|{1R  $status$                            }|\n"
         "|-----------------------------------------|\n"
         "|{1R  $buttons$                           }|\n"
         "|=========================================|\n"
@@ -235,6 +237,7 @@ class FilePicker:
             file_items[f.name] = _pick_file
 
         popup.assign("files",   MenuFunction(file_items or {"(empty)": lambda s: None}))
+        popup.assign("status",  StatusMessage())
         popup.assign("buttons", _SubmittingMenu("path"))
 
         # Live filter: rebuild $files$ whenever the filter text changes.
@@ -242,18 +245,26 @@ class FilePicker:
 
         # Path field: live navigation — when the user types a valid directory
         # or file path, update tree/files without overwriting the path box.
+        # Feedback is shown in the $status$ region.
         def _on_path_change(value):
             stripped = value.strip()
-            if os.path.isdir(stripped) and stripped != state["active_dir"]:
-                state["active_dir"] = stripped
-                _rebuild_tree(popup)
-                _rebuild_files(popup)
+            if not stripped:
+                popup.update("status", None)
+            elif os.path.isdir(stripped):
+                popup.update("status", ("success", f"Directory: {stripped}"))
+                if stripped != state["active_dir"]:
+                    state["active_dir"] = stripped
+                    _rebuild_tree(popup)
+                    _rebuild_files(popup)
             elif os.path.isfile(stripped):
+                popup.update("status", ("success", f"File: {os.path.basename(stripped)}"))
                 parent = os.path.dirname(stripped)
                 if parent != state["active_dir"]:
                     state["active_dir"] = parent
                     _rebuild_tree(popup)
                     _rebuild_files(popup)
+            else:
+                popup.update("status", ("error", "Path does not exist"))
 
         popup.on_change("path", _on_path_change)
 

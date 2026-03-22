@@ -21,6 +21,7 @@ Interactions are assigned via `Shell.assign(name, interaction)`. See [api.md](..
 | checkbox | `CheckBox` | Toggleable list of items; multi-select or single-select | [checkbox.md](checkbox.md) |
 | function | `Function` | Custom interaction — full control delegated to a callable | [function.md](function.md) |
 | form-input | `FormInput` | Structured data-entry form returning a dict of typed values | [form-input.md](form-input.md) |
+| status-message | `StatusMessage` | Display-only inline status / validation message with severity styling | [status-message.md](status-message.md) |
 
 ---
 
