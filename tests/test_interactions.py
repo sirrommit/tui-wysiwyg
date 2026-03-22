@@ -357,6 +357,39 @@ class TestFormInput:
         form.handle_key(make_key(' '))
         assert form.get_value()['flag'] is True
 
+    # --- bool default parsing ---
+
+    def test_bool_default_ambiguous_string_raises(self):
+        """Arbitrary truthy strings like '1', 'yes', 'on' must be rejected."""
+        for bad in ('1', '0', 'yes', 'no', 'on', 'off', ''):
+            with pytest.raises(ValueError):
+                FormInput({'f': {'type': 'bool', 'descriptor': 'F', 'default': bad}})
+
+    def test_bool_default_false_capital_accepted(self):
+        """'False' (capital F) is accepted case-insensitively and maps to False."""
+        form = FormInput({'f': {'type': 'bool', 'descriptor': 'F', 'default': 'False'}})
+        assert form.get_value()['f'] is False
+
+    def test_bool_default_true_string_accepted(self):
+        form = FormInput({'f': {'type': 'bool', 'descriptor': 'F', 'default': 'true'}})
+        assert form.get_value()['f'] is True
+
+    def test_bool_default_false_lower_string_accepted(self):
+        form = FormInput({'f': {'type': 'bool', 'descriptor': 'F', 'default': 'false'}})
+        assert form.get_value()['f'] is False
+
+    def test_bool_default_true_mixed_case_accepted(self):
+        form = FormInput({'f': {'type': 'bool', 'descriptor': 'F', 'default': 'True'}})
+        assert form.get_value()['f'] is True
+
+    def test_bool_default_python_true_accepted(self):
+        form = FormInput({'f': {'type': 'bool', 'descriptor': 'F', 'default': True}})
+        assert form.get_value()['f'] is True
+
+    def test_bool_default_python_false_accepted(self):
+        form = FormInput({'f': {'type': 'bool', 'descriptor': 'F', 'default': False}})
+        assert form.get_value()['f'] is False
+
     def test_choices_cycle_with_space(self):
         form = FormInput({
             'role': {'type': 'choices', 'descriptor': 'Role', 'options': ['A', 'B', 'C']}

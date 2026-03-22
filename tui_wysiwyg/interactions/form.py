@@ -48,7 +48,7 @@ class FormInput(Interaction):
 
             # Initialize state
             if ftype == 'bool':
-                self._field_states[key] = bool(default) if default is not None else False
+                self._field_states[key] = _coerce('bool', default) if default is not None else False
             elif ftype == 'choices':
                 options = defn['options']
                 if default is not None and default in options:
@@ -389,5 +389,11 @@ def _coerce(ftype: str, value):
     elif ftype == 'float':
         return float(value)
     elif ftype == 'bool':
-        return bool(value)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str) and value.lower() in ('true', 'false'):
+            return value.lower() == 'true'
+        raise ValueError(
+            f"Boolean field requires True/False or the strings 'true'/'false', got {value!r}"
+        )
     return value

@@ -29,13 +29,14 @@ Items are ordered by priority. Complete each group before moving to the next.
 
 ### 3. `FormInput` boolean default parsing silently inverts intent
 
-- [ ] In `form.py` `_coerce()`, replace `return bool(value)` for bool fields with strict parsing:
+- [x] In `form.py` `_coerce()`, replace `return bool(value)` for bool fields with strict parsing:
   - Accept `True`/`False` (Python bool) directly
   - Accept `"true"`/`"false"` (case-insensitive strings)
   - Raise `ValueError` for any other input
-- [ ] Add test: `FormInput({'f': {'type': 'bool', ..., 'default': 'False'}})` raises `ValueError`
-- [ ] Add test: `FormInput({'f': {'type': 'bool', ..., 'default': 'true'}})` → value is `True`
-- [ ] Add test: `FormInput({'f': {'type': 'bool', ..., 'default': False}})` → value is `False`
+- [x] Fix `form.py` `__init__` to use `_coerce()` rather than `bool()` when initialising state
+- [x] Add test: ambiguous strings (`'1'`, `'yes'`, etc.) raise `ValueError`
+- [x] Add test: `'False'`/`'false'`/`'true'` accepted correctly
+- [x] Add test: Python `True`/`False` accepted correctly
 
 ### 4. Widget test coverage (currently 0%)
 
