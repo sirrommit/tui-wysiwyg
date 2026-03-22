@@ -97,11 +97,12 @@ class TestFilePicker:
     def test_files_panel_shows_files_in_start_dir(self, tmp_path):
         """Files in start_dir appear in the files panel (indirect: selecting one updates path)."""
         (tmp_path / "readme.txt").write_text("hello")
-        # Tab × 3 to reach files panel, Enter to select first file, Tab to buttons, Enter Open
-        keys = ([make_key('\t')] * 3      # path → filter → tree → files
-                + [make_key('KEY_ENTER')]  # select first item in files (readme.txt)
-                + _TAB_TO_BUTTONS          # refocus to buttons
-                + [make_key('KEY_ENTER')]) # Open
+        # Tab × 3 to reach files panel, Enter to select first file,
+        # Tab × 1 to buttons (focus stays on files after Enter), Enter Open
+        keys = ([make_key('\t')] * 3        # path → filter → tree → files
+                + [make_key('KEY_ENTER')]    # select first item in files (readme.txt)
+                + [make_key('\t')]           # files → buttons (1 tab only)
+                + [make_key('KEY_ENTER')])   # Open
         result = run_picker(str(tmp_path), keys)
         assert result == str(tmp_path / "readme.txt")
 
@@ -121,14 +122,12 @@ class TestFilePicker:
         sub = tmp_path / "mysubdir"
         sub.mkdir()
         (sub / "child.txt").write_text("c")
-        # Tab × 2 to reach tree panel; Enter on first item (.. or subdir)
-        # The tree starts with ".." then subdirs; navigate to subdir
-        # Tab to tree → if parent exists, first entry is ".." (which navigates up)
-        # Since tmp_path has a parent, ".." is first. Down moves to subdir; Enter navigates in.
-        # Then Tab × 4 to buttons, Enter Open
+        # Tab × 2 to reach tree panel; tree starts with ".." then subdirs.
+        # Down moves to subdir; Enter navigates in (focus stays on tree).
+        # Tab × 2 from tree → files → buttons, Enter Open.
         keys = ([make_key('\t')] * 2     # path → filter → tree
                 + [make_key('KEY_DOWN'), make_key('KEY_ENTER')]  # move to subdir, navigate
-                + _TAB_TO_BUTTONS        # reattach focus to buttons
+                + [make_key('\t')] * 2   # tree → files → buttons (2 tabs, not 4)
                 + [make_key('KEY_ENTER')])
         result = run_picker(str(tmp_path), keys)
         assert result == str(sub)
@@ -147,7 +146,7 @@ class TestFilePicker:
                 + [make_key('\t')]      # filter → tree
                 + [make_key('\t')]      # tree → files (only .py visible)
                 + [make_key('KEY_ENTER')]  # select script.py
-                + _TAB_TO_BUTTONS
+                + [make_key('\t')]         # files → buttons (1 tab; focus stays on files after Enter)
                 + [make_key('KEY_ENTER')])
         result = run_picker(str(tmp_path), keys)
         assert result == str(tmp_path / "script.py")
@@ -161,7 +160,7 @@ class TestFilePicker:
             # Tab × 2 to tree, navigate into locked dir (Down if needed), then Open
             keys = ([make_key('\t')] * 2
                     + [make_key('KEY_DOWN'), make_key('KEY_ENTER')]  # navigate into locked
-                    + _TAB_TO_BUTTONS
+                    + [make_key('\t')] * 2   # tree → files → buttons (2 tabs)
                     + [make_key('KEY_ENTER')])
             result = run_picker(str(tmp_path), keys)
             # Should not raise; result is whatever path was set
@@ -177,7 +176,7 @@ class TestFilePicker:
         keys = ([make_key('\t')] * 3
                 + [make_key('KEY_DOWN')] * 15
                 + [make_key('KEY_ENTER')]
-                + _TAB_TO_BUTTONS
+                + [make_key('\t')]           # files → buttons (1 tab; focus stays on files after Enter)
                 + [make_key('KEY_ENTER')])
         result = run_picker(str(tmp_path), keys)
         # Result should be one of the files (15th sorted file)

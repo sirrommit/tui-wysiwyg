@@ -40,13 +40,10 @@ Items are ordered by priority. Complete each group before moving to the next.
 
 ### 4. Widget test coverage (currently 0%)
 
-- [ ] `tests/test_widget_confirm.py` — exit values (Yes/No), Escape/Ctrl+Q returns `None`, parent display restored
-- [ ] `tests/test_widget_alert.py` — OK returns `True`, Escape returns `None`
-- [ ] `tests/test_widget_input_prompt.py` — typed value returned on OK, Cancel returns `None`, initial text pre-populated
-- [ ] `tests/test_widget_list_select.py` — single mode selection, multi mode selection, Cancel returns `None`
-- [ ] `tests/test_widget_file_picker.py` — filter narrows file list, `dirs_only` hides files, navigation into subdirectory, Cancel returns `None`
-- [ ] `tests/test_widget_date_picker.py` — month navigation, date selection returns `datetime.date`, Cancel returns `None`
-- [ ] `tests/test_widget_progress.py` — `set_progress()` updates state, cancel via Escape sets `cancelled=True`, context manager restores parent display on exit
+- [x] `tests/test_widgets.py` — Confirm, Alert, InputPrompt, ListSelect (single + multi) exit values, Escape/Ctrl+Q, scroll
+- [x] `tests/test_widget_file_picker.py` — filter narrows file list, `dirs_only` hides files, navigation into subdirectory, Cancel returns `None`
+- [x] `tests/test_widget_date_picker.py` — month navigation, date selection returns `datetime.date`, Cancel returns `None`
+- [x] `tests/test_widget_progress.py` — `set_progress()` updates state, cancel via Escape sets `cancelled=True`, context manager restores parent display on exit
 
 ---
 
